@@ -1,37 +1,37 @@
 local baseUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/"
-local files = { "help", "play", "save", "savetodevice", "startup", "menu", "setvolume" }
 
 term.clear()
 
-for _, file in pairs(files) do
-	print("Downloading program '" .. file .. "'...")
+print("Installing iPod-style Music Player...")
+print("Downloading main program...")
 
-	local response = http.get(baseUri .. file .. ".lua")
-	
-	if response then
-		local fileInstance = fs.open(file .. ".lua", "w")
-		fileInstance.write(response.readAll())
-		fileInstance.close()
-		response.close()
-	else
-		print("ERROR: Failed to download " .. file .. ".lua")
-		print("Please check your internet connection and try again.")
-		return
-	end
-end
+local response = http.get(baseUri .. "startup.lua")
 
-local updateUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/version.txt"
-
-local updateResponse = http.get(updateUri)
-
-if updateResponse then
-	local updateFile = fs.open("version.txt", "w")
-	updateFile.write(updateResponse.readAll())
-	updateFile.close()
-	updateResponse.close()
-	
-	print("Installation complete! Please restart your computer.")
+if response then
+	local fileInstance = fs.open("startup.lua", "w")
+	fileInstance.write(response.readAll())
+	fileInstance.close()
+	response.close()
+	print("✓ Downloaded startup.lua")
 else
-	print("ERROR: Failed to download version.txt")
-	print("Installation may be incomplete.")
+	print("ERROR: Failed to download startup.lua")
+	print("Please check your internet connection and try again.")
+	return
 end
+
+-- Create version file
+local versionFile = fs.open("version.txt", "w")
+versionFile.write("2.1")
+versionFile.close()
+print("✓ Created version file")
+
+print("")
+print("Installation complete!")
+print("This music player features:")
+print("• YouTube search and streaming")
+print("• Queue management")
+print("• Volume controls")
+print("• Loop modes")
+print("• Modern touch interface")
+print("")
+print("Run 'startup' to begin using your new music player!")
