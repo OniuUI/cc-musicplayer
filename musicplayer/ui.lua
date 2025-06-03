@@ -34,18 +34,23 @@ function ui.drawHeader(state)
     term.setCursorPos(1, 1)
     term.clearLine()
     
-    -- Center the title
+    -- Calculate center position for the entire header including decorative elements
     local title = config.branding.title
-    local titleX = math.floor((state.width - #title) / 2) + 1
-    term.setCursorPos(titleX, 1)
+    local fullHeader = "♪ " .. title .. " ♪"
+    local headerX = math.floor((state.width - #fullHeader) / 2) + 1
+    
+    -- Ensure we don't go off the left edge
+    if headerX < 1 then
+        headerX = 1
+    end
+    
+    -- Draw the complete header
+    term.setCursorPos(headerX, 1)
+    term.setTextColor(config.ui.colors.text_accent)
+    term.write("♪ ")
     term.setTextColor(config.ui.colors.text_primary)
     term.write(title)
-    
-    -- Decorative elements
     term.setTextColor(config.ui.colors.text_accent)
-    term.setCursorPos(titleX - 2, 1)
-    term.write("♪ ")
-    term.setCursorPos(titleX + #title, 1)
     term.write(" ♪")
 end
 
