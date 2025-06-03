@@ -1,4 +1,4 @@
--- Main loop module for the music player
+-- Main loop module for the radio player
 local config = require("musicplayer.config")
 local ui = require("musicplayer.ui")
 local input = require("musicplayer.input")

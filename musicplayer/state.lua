@@ -1,4 +1,4 @@
--- State management for the music player
+-- State management for the radio player
 local config = require("musicplayer.config")
 
 local state = {}

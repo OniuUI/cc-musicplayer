@@ -1,4 +1,4 @@
--- iPod-Style Music Player for ComputerCraft
+-- Bognesferga Radio for ComputerCraft
 -- Modular version with clean separation of concerns
 
 -- Import all modules

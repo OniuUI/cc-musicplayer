@@ -1,4 +1,4 @@
--- Configuration and constants for the music player
+-- Configuration and constants for the radio player
 local config = {}
 
 config.api_base_url = "https://ipod-2to6magyna-uc.a.run.app/"

@@ -1,4 +1,4 @@
--- Network handling module for the music player
+-- Network handling module for the radio player
 local config = require("musicplayer.config")
 
 local network = {}

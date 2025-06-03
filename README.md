@@ -1,118 +1,96 @@
-# iPod-Style Music Player for ComputerCraft
+# Bognesferga Radio for ComputerCraft
 
-A modern, feature-rich music player for ComputerCraft/CC Tweaked that brings YouTube streaming directly to your Minecraft computers. Built with a clean, modular architecture for easy maintenance and extensibility.
+A modern, feature-rich radio player for ComputerCraft/CC Tweaked that brings YouTube streaming directly to your Minecraft computers. Built with a clean, modular architecture for easy maintenance and extensibility.
 
 ## Features
 
-- 🎵 **YouTube Search & Streaming** - Search and play any song from YouTube
-- 📱 **Modern Touch Interface** - Intuitive click-based UI with tabs
-- 🎧 **Queue Management** - Add songs to queue, play next, or play now
-- 🔊 **Volume Controls** - Visual volume slider with real-time adjustment
-- 🔄 **Loop Modes** - Loop off, loop queue, or loop single song
-- 📋 **Playlist Support** - Automatically handles YouTube playlists
-- 🎨 **Clean UI** - Two-tab interface: Now Playing and Search
-- 🏗️ **Modular Architecture** - Clean separation of concerns for easy maintenance
+- **YouTube Integration**: Search and stream music directly from YouTube
+- **Modern Touch Interface**: Clean, intuitive UI with two main tabs
+- **Queue Management**: Add songs to play now, next, or at the end of queue
+- **Volume Control**: Visual slider with real-time adjustment
+- **Loop Modes**: Off, queue loop, or single song loop
+- **Playlist Support**: Paste YouTube playlist links for automatic queueing
+- **Multi-Speaker Support**: Automatically detects and uses connected speakers
+- **DFPWM Audio Streaming**: High-quality audio playback
+- **Modular Architecture**: Clean code separation for easy maintenance
 
 ## Installation
 
-### Easy Installation (Recommended)
-
-Run this command in any ComputerCraft computer:
+Run this command on any ComputerCraft computer:
 
 ```lua
-pastebin get <YOUR_PASTEBIN_ID> install
-install
+shell.run("wget", "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/install.lua", "install")
+shell.run("install")
 ```
 
-### Manual Installation
+## Usage
 
-1. Download all files from this repository
-2. Create a `musicplayer` folder in your ComputerCraft computer
-3. Place the module files in the `musicplayer` folder
-4. Place `startup.lua` in the root directory
-5. Run `startup` to begin
+After installation, simply run:
+```lua
+startup
+```
 
-## Requirements
+### Interface
 
-- ComputerCraft or CC Tweaked
-- Connected speaker(s)
-- Internet connection (HTTP enabled)
+The radio player features a modern two-tab interface:
+
+1. **Now Playing Tab**: Shows current song, playback controls, volume slider, and queue
+2. **Search Tab**: YouTube search functionality and results
+
+### Controls
+
+- **Play/Stop**: Start or stop playback
+- **Skip**: Skip to next song in queue
+- **Loop**: Cycle through loop modes (Off → Queue → Song)
+- **Volume Slider**: Click to adjust volume (0-100%)
+- **Search**: Type to search YouTube or paste video/playlist URLs
 
 ## Architecture
 
-The music player is built with a modular architecture:
+The radio player is built with a modular architecture:
 
-### File Structure
-```
-/
-├── startup.lua          # Main entry point
-├── install.lua          # Installation script
-├── version.txt          # Version information
-└── musicplayer/         # Module directory
-    ├── config.lua       # Configuration and constants
-    ├── state.lua        # State management
-    ├── ui.lua           # User interface rendering
-    ├── input.lua        # Input handling (mouse, keyboard)
-    ├── audio.lua        # Audio streaming and playback
-    ├── network.lua      # HTTP requests and responses
-    └── main.lua         # Main UI loop coordination
-```
+- **startup.lua**: Main entry point and module loader
+- **musicplayer/config.lua**: Configuration and constants
+- **musicplayer/state.lua**: Global state management  
+- **musicplayer/ui.lua**: All rendering and drawing functions
+- **musicplayer/input.lua**: Mouse/keyboard input handling
+- **musicplayer/audio.lua**: Audio streaming and playback logic
+- **musicplayer/network.lua**: HTTP request/response handling
+- **musicplayer/main.lua**: UI loop coordination
 
-### Module Responsibilities
+This modular design makes the codebase:
+- **Easy to maintain**: Each module has a single responsibility
+- **Simple to debug**: Issues can be isolated to specific modules
+- **Extensible**: New features can be added without touching existing code
+- **Readable**: Clean separation makes the code self-documenting
 
-- **config.lua** - Centralized configuration, API URLs, UI colors, and constants
-- **state.lua** - Global state initialization and management
-- **ui.lua** - All rendering functions for tabs, buttons, sliders, and displays
-- **input.lua** - Mouse click/drag handling and user interaction logic
-- **audio.lua** - DFPWM audio streaming, speaker management, and playback control
-- **network.lua** - HTTP request handling for search and audio downloads
-- **main.lua** - UI event loop coordination and parallel processing
+## Requirements
 
-## How to Use
+- ComputerCraft or CC: Tweaked
+- Internet connection for YouTube streaming
+- Speaker peripheral (automatically detected)
+- Advanced Computer (for color display)
 
-1. **Start the Player**: Run `startup` 
-2. **Search for Music**: Click the "Search" tab and enter a song name or YouTube URL
-3. **Play Music**: Click on search results to see playback options
-4. **Control Playback**: Use the Now Playing tab for play/stop, skip, loop, and volume controls
-5. **Manage Queue**: Add songs to queue or play them immediately
+## API
 
-## Controls
-
-### Now Playing Tab
-- **Play/Stop Button** - Start or stop current playback
-- **Skip Button** - Skip to next song in queue
-- **Loop Button** - Cycle through loop modes (Off → Queue → Song)
-- **Volume Slider** - Click and drag to adjust volume (0-100%)
-
-### Search Tab
-- **Search Box** - Enter song names or paste YouTube URLs
-- **Search Results** - Click any result to see options:
-  - **Play Now** - Immediately play and clear queue
-  - **Play Next** - Add to front of queue
-  - **Add to Queue** - Add to end of queue
-
-## Technical Details
-
-- Streams DFPWM audio directly from API
-- Supports multiple speakers automatically
-- Handles playlists by queueing all tracks
-- Real-time volume adjustment
-- Efficient parallel processing for smooth UI
-- Modular design allows easy feature additions and maintenance
+The radio player uses a custom API endpoint for YouTube integration. The modular design allows easy switching to different backends if needed.
 
 ## Development
 
-The modular architecture makes it easy to:
-- Add new features by extending existing modules
-- Modify UI elements without affecting audio logic
-- Change network protocols without touching the interface
-- Debug specific components in isolation
-- Maintain clean separation of concerns
+To contribute or modify:
 
-## Version
+1. Each module is self-contained with clear interfaces
+2. State management is centralized in `state.lua`
+3. UI rendering is separated from logic
+4. Network operations are isolated for easy testing
+5. Configuration is externalized for easy customization
 
-Current version: **2.1**
+## License
 
----
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-*This is a modern rewrite of the original cc-music-player with enhanced features, a completely new interface, and clean modular architecture.*
+## Credits
+
+- Original concept inspired by music streaming applications
+- Built for the ComputerCraft/CC: Tweaked community
+- Developed by Forty
