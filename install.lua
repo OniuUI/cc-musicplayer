@@ -13,20 +13,20 @@ end
 
 -- List of files to download
 local files = {
-	{name = "startup.lua", path = "startup.lua"},
-	{name = "config.lua", path = "musicplayer/config.lua"},
-	{name = "state.lua", path = "musicplayer/state.lua"},
-	{name = "ui.lua", path = "musicplayer/ui.lua"},
-	{name = "input.lua", path = "musicplayer/input.lua"},
-	{name = "audio.lua", path = "musicplayer/audio.lua"},
-	{name = "network.lua", path = "musicplayer/network.lua"},
-	{name = "main.lua", path = "musicplayer/main.lua"}
+	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
+	{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
+	{name = "state.lua", url = baseUri .. "musicplayer/state.lua", path = "musicplayer/state.lua"},
+	{name = "ui.lua", url = baseUri .. "musicplayer/ui.lua", path = "musicplayer/ui.lua"},
+	{name = "input.lua", url = baseUri .. "musicplayer/input.lua", path = "musicplayer/input.lua"},
+	{name = "audio.lua", url = baseUri .. "musicplayer/audio.lua", path = "musicplayer/audio.lua"},
+	{name = "network.lua", url = baseUri .. "musicplayer/network.lua", path = "musicplayer/network.lua"},
+	{name = "main.lua", url = baseUri .. "musicplayer/main.lua", path = "musicplayer/main.lua"}
 }
 
 -- Download each file
 for _, file in ipairs(files) do
 	print("Downloading " .. file.name .. "...")
-	local response = http.get(baseUri .. file.name)
+	local response = http.get(file.url)
 	
 	if response then
 		local fileInstance = fs.open(file.path, "w")
