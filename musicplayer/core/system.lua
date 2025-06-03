@@ -21,6 +21,8 @@ local system = {}
 
 -- Initialize the entire system
 function system.init()
+    print("DEBUG: Starting system initialization...")
+    
     local systemState = {
         initialized = false,
         telemetry = nil,
@@ -32,12 +34,14 @@ function system.init()
     }
     
     -- Step 1: Initialize telemetry system
+    print("DEBUG: Step 1 - Initializing telemetry...")
     local success, telemetryInstance = pcall(telemetry.init, "INFO")
     if not success then
         print("FATAL: Failed to initialize telemetry system")
         print("Error: " .. tostring(telemetryInstance))
         return nil
     end
+    print("DEBUG: Telemetry initialized successfully")
     
     systemState.telemetry = telemetryInstance
     systemState.logger = telemetryInstance.getLogger()
@@ -45,28 +49,39 @@ function system.init()
     systemState.logger.info("System", "Starting Bognesferga Radio v" .. config.version)
     
     -- Step 2: Initialize error handler
+    print("DEBUG: Step 2 - Initializing error handler...")
     systemState.errorHandler = errorHandler.init(systemState.telemetry)
     systemState.logger.info("System", "Error handling middleware initialized")
+    print("DEBUG: Error handler initialized successfully")
     
     -- Step 3: Initialize HTTP client
+    print("DEBUG: Step 3 - Initializing HTTP client...")
     systemState.httpClient = httpClient.init(systemState.errorHandler)
     systemState.logger.info("System", "HTTP client initialized")
+    print("DEBUG: HTTP client initialized successfully")
     
     -- Step 4: Initialize speaker manager
+    print("DEBUG: Step 4 - Initializing speaker manager...")
     systemState.speakerManager = speakerManager.init(systemState.errorHandler, systemState.telemetry)
+    print("DEBUG: Speaker manager initialized successfully")
     
     -- Step 5: Check system requirements
+    print("DEBUG: Step 5 - Checking system requirements...")
     local requirementsOk = system.checkRequirements(systemState)
     if not requirementsOk then
         systemState.logger.fatal("System", "System requirements not met")
         return nil
     end
+    print("DEBUG: System requirements check passed")
     
     -- Step 6: Test connectivity
+    print("DEBUG: Step 6 - Testing connectivity...")
     system.testConnectivity(systemState)
+    print("DEBUG: Connectivity test completed")
     
     systemState.initialized = true
     systemState.logger.info("System", "System initialization completed successfully")
+    print("DEBUG: System initialization completed successfully")
     
     return systemState
 end

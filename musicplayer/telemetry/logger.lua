@@ -33,7 +33,21 @@ logger.LEVEL_COLORS = {
 -- Initialize logger
 function logger.init(logMonitor, logLevel)
     logger.logMonitor = logMonitor
-    logger.logLevel = logLevel or logger.LEVELS.INFO
+    
+    -- Handle both string and numeric log levels
+    if type(logLevel) == "string" then
+        local stringToLevel = {
+            DEBUG = logger.LEVELS.DEBUG,
+            INFO = logger.LEVELS.INFO,
+            WARN = logger.LEVELS.WARN,
+            ERROR = logger.LEVELS.ERROR,
+            FATAL = logger.LEVELS.FATAL
+        }
+        logger.logLevel = stringToLevel[logLevel:upper()] or logger.LEVELS.INFO
+    else
+        logger.logLevel = logLevel or logger.LEVELS.INFO
+    end
+    
     logger.logFile = "musicplayer/logs/session.log"
     logger.maxLogLines = 1000
     logger.logBuffer = {}
