@@ -92,9 +92,15 @@ drawBanner()
 colorPrint("Setting up advanced modular structure...", colors.cyan)
 sleep(0.5)
 
--- Create directory structure
+-- Create directory structure with new organized folders
 local directories = {
 	"musicplayer",
+	"musicplayer/core",
+	"musicplayer/ui",
+	"musicplayer/audio",
+	"musicplayer/network",
+	"musicplayer/utils",
+	"musicplayer/middleware",
 	"musicplayer/telemetry",
 	"musicplayer/logs"
 }
@@ -131,25 +137,45 @@ end
 
 sleep(0.5)
 
--- Files to download with new telemetry modules
+-- Files to download with new refactored structure
 local files = {
 	-- Core files
 	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
 	{name = "uninstall.lua", url = baseUri .. "uninstall.lua", path = "uninstall.lua"},
 	
-	-- Core modules
+	-- Configuration
 	{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
-	{name = "state.lua", url = baseUri .. "musicplayer/state.lua", path = "musicplayer/state.lua"},
+	
+	-- Core system modules
+	{name = "system.lua", url = baseUri .. "musicplayer/core/system.lua", path = "musicplayer/core/system.lua"},
+	
+	-- UI modules
+	{name = "components.lua", url = baseUri .. "musicplayer/ui/components.lua", path = "musicplayer/ui/components.lua"},
 	{name = "ui.lua", url = baseUri .. "musicplayer/ui.lua", path = "musicplayer/ui.lua"},
-	{name = "input.lua", url = baseUri .. "musicplayer/input.lua", path = "musicplayer/input.lua"},
+	
+	-- Audio modules
+	{name = "speaker_manager.lua", url = baseUri .. "musicplayer/audio/speaker_manager.lua", path = "musicplayer/audio/speaker_manager.lua"},
 	{name = "audio.lua", url = baseUri .. "musicplayer/audio.lua", path = "musicplayer/audio.lua"},
+	
+	-- Network modules
+	{name = "http_client.lua", url = baseUri .. "musicplayer/network/http_client.lua", path = "musicplayer/network/http_client.lua"},
 	{name = "network.lua", url = baseUri .. "musicplayer/network.lua", path = "musicplayer/network.lua"},
+	
+	-- Utilities
+	{name = "common.lua", url = baseUri .. "musicplayer/utils/common.lua", path = "musicplayer/utils/common.lua"},
+	
+	-- Middleware
+	{name = "error_handler.lua", url = baseUri .. "musicplayer/middleware/error_handler.lua", path = "musicplayer/middleware/error_handler.lua"},
+	
+	-- Legacy modules (still needed for compatibility)
+	{name = "state.lua", url = baseUri .. "musicplayer/state.lua", path = "musicplayer/state.lua"},
+	{name = "input.lua", url = baseUri .. "musicplayer/input.lua", path = "musicplayer/input.lua"},
 	{name = "main.lua", url = baseUri .. "musicplayer/main.lua", path = "musicplayer/main.lua"},
 	{name = "menu.lua", url = baseUri .. "musicplayer/menu.lua", path = "musicplayer/menu.lua"},
 	{name = "radio.lua", url = baseUri .. "musicplayer/radio.lua", path = "musicplayer/radio.lua"},
 	{name = "radio_ui.lua", url = baseUri .. "musicplayer/radio_ui.lua", path = "musicplayer/radio_ui.lua"},
 	
-	-- New modular architecture files
+	-- Application management
 	{name = "system_init.lua", url = baseUri .. "musicplayer/system_init.lua", path = "musicplayer/system_init.lua"},
 	{name = "app_manager.lua", url = baseUri .. "musicplayer/app_manager.lua", path = "musicplayer/app_manager.lua"},
 	{name = "input_handlers.lua", url = baseUri .. "musicplayer/input_handlers.lua", path = "musicplayer/input_handlers.lua"},
@@ -208,9 +234,9 @@ print()
 
 -- Create version file
 local versionFile = fs.open("version.txt", "w")
-versionFile.write("4.0")
+versionFile.write("4.1")
 versionFile.close()
-colorPrint("✓ Created version file (v4.0)", colors.lime)
+colorPrint("✓ Created version file (v4.1)", colors.lime)
 
 sleep(0.5)
 
@@ -223,19 +249,20 @@ colorPrint("Installation complete!", colors.lime)
 sleep(0.3)
 colorPrint("This advanced radio player features:", colors.cyan)
 local features = {
-	"• Advanced telemetry and logging system",
+	"• Modular architecture with organized code structure",
+	"• Advanced error handling middleware",
+	"• Comprehensive HTTP client with retry logic",
+	"• Smart speaker management system",
+	"• Reusable UI components",
+	"• Utility functions to avoid code duplication",
+	"• Enhanced telemetry and logging system",
 	"• Dual-screen support with debug console",
-	"• Computer and turtle detection",
-	"• Comprehensive error handling",
-	"• Performance monitoring",
 	"• YouTube search and streaming",
-	"• Network radio functionality",
-	"• Queue management and volume controls",
-	"• Modern touch interface"
+	"• Network radio functionality"
 }
 
 for i, feature in ipairs(features) do
-	local featureColors = {colors.yellow, colors.orange, colors.red, colors.magenta, colors.purple, colors.blue, colors.cyan, colors.lime, colors.white}
+	local featureColors = {colors.yellow, colors.orange, colors.red, colors.magenta, colors.purple, colors.blue, colors.cyan, colors.lime, colors.white, colors.lightBlue}
 	local colorIndex = ((i - 1) % #featureColors) + 1
 	colorPrint(feature, featureColors[colorIndex])
 	sleep(0.1)
@@ -301,12 +328,12 @@ term.setBackgroundColor(colors.black)
 term.setCursorPos(1, currentY + 3)
 
 -- Additional tips
-colorPrint("New Features:", colors.yellow)
-colorPrint("• Real-time system monitoring", colors.lightGray)
-colorPrint("• Automatic dual-screen detection", colors.lightGray)
-colorPrint("• Comprehensive logging to files", colors.lightGray)
-colorPrint("• Performance metrics tracking", colors.lightGray)
-colorPrint("• Enhanced error reporting", colors.lightGray)
+colorPrint("New in v4.1:", colors.yellow)
+colorPrint("• Modular code architecture", colors.lightGray)
+colorPrint("• Enhanced error handling", colors.lightGray)
+colorPrint("• Improved network reliability", colors.lightGray)
+colorPrint("• Better speaker management", colors.lightGray)
+colorPrint("• Reusable UI components", colors.lightGray)
 colorPrint("• Type 'uninstall' to remove the system", colors.lightGray)
 
 sleep(0.5)
@@ -315,7 +342,7 @@ sleep(0.5)
 local _, currentY = term.getCursorPos()
 term.setCursorPos(1, currentY + 2)
 term.setTextColor(colors.lime)
-term.write("Ready to rock with telemetry! ")
+term.write("Ready to rock with enhanced architecture! ")
 term.setTextColor(colors.yellow)
 term.write("Type 'startup' to begin!")
 

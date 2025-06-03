@@ -1,43 +1,41 @@
 -- Bognesferga Radio - Main Entry Point
 -- A comprehensive music and radio system for ComputerCraft with advanced telemetry
 
--- Import our modular components
-local system_init = require("musicplayer.system_init")
+-- Import the new core system
+local system = require("musicplayer.core.system")
 local app_manager = require("musicplayer.app_manager")
 
 -- Main application entry point
 local function main()
-    -- Initialize telemetry and system
-    local success, telemetry, systemInfo, capabilities = pcall(system_init.initializeSystem)
-    if not success then
-        print("FATAL ERROR: Failed to initialize telemetry system")
-        print("Error: " .. tostring(telemetry))
+    -- Initialize the core system
+    local systemState = system.init()
+    if not systemState then
+        print("FATAL ERROR: Failed to initialize core system")
         return
     end
     
-    local logger = telemetry.getLogger()
+    local logger = systemState.logger
+    logger.info("Startup", "Core system initialized successfully")
     
-    -- Load all application modules
-    local modules = system_init.loadModules(logger, telemetry)
-    if not modules then
-        telemetry.emergency("Startup", "Failed to load required modules")
-        return
-    end
-    
-    -- Check system requirements
-    if not system_init.checkRequirements(capabilities, logger) then
-        logger.fatal("Startup", "System requirements not met")
-        return
-    end
-    
-    -- Initialize application state
-    local appState = app_manager.initAppState(systemInfo, capabilities, modules, telemetry, logger)
+    -- Initialize application state using the new system
+    local appState = app_manager.initAppState(
+        systemState.telemetry.getSystemInfo(),
+        systemState.telemetry.getCapabilities(),
+        {
+            system = systemState,
+            httpClient = systemState.httpClient,
+            speakerManager = systemState.speakerManager,
+            errorHandler = systemState.errorHandler
+        },
+        systemState.telemetry,
+        logger
+    )
     
     -- Run the main application loop
-    app_manager.runMainLoop(appState, logger, telemetry)
+    app_manager.runMainLoop(appState, logger, systemState.telemetry)
     
     -- Cleanup and shutdown
-    app_manager.cleanup(telemetry)
+    system.cleanup(systemState)
 end
 
 -- Start the application with global error handling
@@ -53,9 +51,12 @@ local function safeMain()
         term.setTextColor(colors.white)
         
         -- Try to log the error if telemetry is available
-        local telemetry = require("musicplayer.telemetry.telemetry")
-        if telemetry then
-            telemetry.emergency("Fatal", tostring(error))
+        local telemetrySuccess, telemetry = pcall(require, "musicplayer.telemetry.telemetry")
+        if telemetrySuccess and telemetry then
+            local telemetryInstance = telemetry.init("ERROR")
+            if telemetryInstance then
+                telemetryInstance.emergency("Fatal", tostring(error))
+            end
         end
     end
 end

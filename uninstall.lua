@@ -73,17 +73,34 @@ local function confirmUninstall()
         "download",
         "version.txt",
         "musicplayer/ (entire folder)",
-        "  ├── Core modules:",
+        "  ├── Core system:",
+        "  │   └── core/system.lua",
+        "  ├── UI components:",
+        "  │   ├── ui/components.lua",
+        "  │   └── ui.lua",
+        "  ├── Audio system:",
+        "  │   ├── audio/speaker_manager.lua",
+        "  │   └── audio.lua",
+        "  ├── Network system:",
+        "  │   ├── network/http_client.lua",
+        "  │   └── network.lua",
+        "  ├── Utilities:",
+        "  │   └── utils/common.lua",
+        "  ├── Middleware:",
+        "  │   └── middleware/error_handler.lua",
+        "  ├── Legacy modules:",
         "  │   ├── config.lua",
         "  │   ├── state.lua", 
-        "  │   ├── ui.lua",
         "  │   ├── input.lua",
-        "  │   ├── audio.lua",
-        "  │   ├── network.lua",
         "  │   ├── main.lua",
         "  │   ├── menu.lua",
         "  │   ├── radio.lua",
         "  │   └── radio_ui.lua",
+        "  ├── Application management:",
+        "  │   ├── system_init.lua",
+        "  │   ├── app_manager.lua",
+        "  │   ├── input_handlers.lua",
+        "  │   └── mode_handlers.lua",
         "  ├── Telemetry system:",
         "  │   ├── telemetry/telemetry.lua",
         "  │   ├── telemetry/logger.lua",
@@ -114,17 +131,41 @@ local function removeFiles()
         {path = "download", name = "Download script"},
         {path = "version.txt", name = "Version file"},
         
-        -- Core modules
+        -- Core system modules
+        {path = "musicplayer/core/system.lua", name = "Core system module"},
+        
+        -- UI modules
+        {path = "musicplayer/ui/components.lua", name = "UI components module"},
+        {path = "musicplayer/ui.lua", name = "UI rendering module"},
+        
+        -- Audio modules
+        {path = "musicplayer/audio/speaker_manager.lua", name = "Speaker manager module"},
+        {path = "musicplayer/audio.lua", name = "Audio processing module"},
+        
+        -- Network modules
+        {path = "musicplayer/network/http_client.lua", name = "HTTP client module"},
+        {path = "musicplayer/network.lua", name = "Network handling module"},
+        
+        -- Utilities
+        {path = "musicplayer/utils/common.lua", name = "Common utilities module"},
+        
+        -- Middleware
+        {path = "musicplayer/middleware/error_handler.lua", name = "Error handling middleware"},
+        
+        -- Legacy modules
         {path = "musicplayer/config.lua", name = "Configuration module"},
         {path = "musicplayer/state.lua", name = "State management module"},
-        {path = "musicplayer/ui.lua", name = "UI rendering module"},
         {path = "musicplayer/input.lua", name = "Input handling module"},
-        {path = "musicplayer/audio.lua", name = "Audio processing module"},
-        {path = "musicplayer/network.lua", name = "Network handling module"},
         {path = "musicplayer/main.lua", name = "Main coordination module"},
         {path = "musicplayer/menu.lua", name = "Menu system module"},
         {path = "musicplayer/radio.lua", name = "Radio functionality module"},
         {path = "musicplayer/radio_ui.lua", name = "Radio UI module"},
+        
+        -- Application management
+        {path = "musicplayer/system_init.lua", name = "System initialization module"},
+        {path = "musicplayer/app_manager.lua", name = "Application manager module"},
+        {path = "musicplayer/input_handlers.lua", name = "Input handlers module"},
+        {path = "musicplayer/mode_handlers.lua", name = "Mode handlers module"},
         
         -- Telemetry modules
         {path = "musicplayer/telemetry/telemetry.lua", name = "Main telemetry module"},
@@ -133,7 +174,7 @@ local function removeFiles()
     }
     
     local removedCount = 0
-    local totalFiles = #filesToRemove + 4 -- +3 for directories, +1 for uninstall.lua (self-delete)
+    local totalFiles = #filesToRemove + 8 -- +8 for directories, +1 for uninstall.lua (self-delete)
     
     colorPrint("Removing files...", colors.cyan)
     sleep(0.5)
@@ -154,40 +195,32 @@ local function removeFiles()
         sleep(0.1)
     end
     
-    -- Remove log files directory
-    term.setTextColor(colors.white)
-    term.write("Removing logs directory... ")
+    -- Remove directories in reverse order (deepest first)
+    local directories = {
+        "musicplayer/logs",
+        "musicplayer/telemetry",
+        "musicplayer/middleware",
+        "musicplayer/utils",
+        "musicplayer/network",
+        "musicplayer/audio",
+        "musicplayer/ui",
+        "musicplayer/core",
+        "musicplayer"
+    }
     
-    if fs.exists("musicplayer/logs") then
-        fs.delete("musicplayer/logs")
-        colorPrint("✓ Removed", colors.lime)
-        removedCount = removedCount + 1
-    else
-        colorPrint("✗ Not found", colors.yellow)
-    end
-    
-    -- Remove telemetry directory
-    term.setTextColor(colors.white)
-    term.write("Removing telemetry directory... ")
-    
-    if fs.exists("musicplayer/telemetry") then
-        fs.delete("musicplayer/telemetry")
-        colorPrint("✓ Removed", colors.lime)
-        removedCount = removedCount + 1
-    else
-        colorPrint("✗ Not found", colors.yellow)
-    end
-    
-    -- Remove the musicplayer directory if it's empty or force remove it
-    term.setTextColor(colors.white)
-    term.write("Removing musicplayer directory... ")
-    
-    if fs.exists("musicplayer") then
-        fs.delete("musicplayer")
-        colorPrint("✓ Removed", colors.lime)
-        removedCount = removedCount + 1
-    else
-        colorPrint("✗ Not found", colors.yellow)
+    for _, dir in ipairs(directories) do
+        term.setTextColor(colors.white)
+        term.write("Removing " .. dir .. " directory... ")
+        
+        if fs.exists(dir) then
+            fs.delete(dir)
+            colorPrint("✓ Removed", colors.lime)
+            removedCount = removedCount + 1
+        else
+            colorPrint("✗ Not found", colors.yellow)
+        end
+        
+        sleep(0.1)
     end
     
     -- Remove the uninstaller itself (last step)
@@ -225,15 +258,24 @@ local function main()
     end
     
     -- Show what will be removed
-    colorPrint("Advanced system detected with:", colors.cyan)
+    colorPrint("Enhanced modular system detected with:", colors.cyan)
+    if fs.exists("musicplayer/core") then
+        colorPrint("• Core system architecture", colors.lightGray)
+    end
+    if fs.exists("musicplayer/middleware") then
+        colorPrint("• Error handling middleware", colors.lightGray)
+    end
+    if fs.exists("musicplayer/utils") then
+        colorPrint("• Utility functions", colors.lightGray)
+    end
     if fs.exists("musicplayer/telemetry") then
         colorPrint("• Telemetry and logging system", colors.lightGray)
     end
     if fs.exists("musicplayer/logs") then
         colorPrint("• Log files and session data", colors.lightGray)
     end
-    colorPrint("• Core music player modules", colors.lightGray)
-    colorPrint("• Radio functionality", colors.lightGray)
+    colorPrint("• Audio and network modules", colors.lightGray)
+    colorPrint("• UI components and legacy modules", colors.lightGray)
     colorPrint("", colors.white)
     
     -- Confirm uninstallation
@@ -264,8 +306,8 @@ local function main()
         
         colorPrint("", colors.white)
         colorPrint("Bognesferga Radio has been successfully uninstalled.", colors.lime)
-        colorPrint("All telemetry data and logs have been removed.", colors.cyan)
-        colorPrint("Thank you for using our advanced music system!", colors.cyan)
+        colorPrint("All modular components and data have been removed.", colors.cyan)
+        colorPrint("Thank you for using our enhanced music system!", colors.cyan)
     else
         colorPrint("No files were removed.", colors.yellow)
         colorPrint("The system may have been already uninstalled.", colors.lightGray)
@@ -277,7 +319,7 @@ local function main()
     term.write("Goodbye! ")
     
     -- Animated farewell
-    local farewell = "♪ Thanks for the music and telemetry! ♪"
+    local farewell = "♪ Thanks for the modular music experience! ♪"
     for i = 1, #farewell do
         local colors_list = {colors.red, colors.orange, colors.yellow, colors.lime, colors.cyan, colors.blue, colors.purple}
         local colorIndex = ((i - 1) % #colors_list) + 1
