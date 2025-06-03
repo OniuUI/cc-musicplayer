@@ -93,7 +93,15 @@ function app_manager.cleanup(telemetry)
     local perfSummary = telemetry.getPerformanceSummary()
     if perfSummary then
         print("Session runtime: " .. string.format("%.2f", perfSummary.runtime) .. " seconds")
-        print("Final memory usage: " .. string.format("%.2f", perfSummary.memoryUsage) .. " KB")
+        
+        -- Show event summary instead of memory usage
+        local totalEvents = 0
+        for _, count in pairs(perfSummary.eventCounts) do
+            totalEvents = totalEvents + count
+        end
+        if totalEvents > 0 then
+            print("Total events processed: " .. totalEvents)
+        end
     end
 end
 

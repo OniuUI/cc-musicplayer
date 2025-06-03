@@ -164,7 +164,7 @@ end
 function telemetry.monitorHealth()
     local health = {
         timestamp = os.clock(),
-        memoryUsage = collectgarbage("count"),
+        memoryUsage = 0, -- Memory tracking not available in ComputerCraft
         uptime = os.clock(),
         peripheralStatus = {}
     }
@@ -183,7 +183,7 @@ function telemetry.monitorHealth()
     end
     
     -- Log health information
-    logger.debug("Telemetry", "Memory usage: " .. string.format("%.2f", health.memoryUsage) .. " KB")
+    logger.debug("Telemetry", "System health check completed")
     logger.debug("Telemetry", "Uptime: " .. string.format("%.1f", health.uptime) .. " seconds")
     
     -- Check for disconnected peripherals
@@ -201,7 +201,7 @@ function telemetry.startPerformanceMonitoring()
     telemetry.performanceData = {
         startTime = os.clock(),
         eventCounts = {},
-        lastGC = collectgarbage("count")
+        lastCheck = os.clock()
     }
     
     logger.info("Telemetry", "Performance monitoring started")
@@ -215,11 +215,15 @@ function telemetry.logPerformanceEvent(eventType)
     
     telemetry.performanceData.eventCounts[eventType] = (telemetry.performanceData.eventCounts[eventType] or 0) + 1
     
-    -- Log memory usage periodically
-    local currentMemory = collectgarbage("count")
-    if currentMemory - telemetry.performanceData.lastGC > 100 then -- Log every 100KB increase
-        logger.debug("Performance", "Memory: " .. string.format("%.2f", currentMemory) .. " KB (+%.2f KB)", currentMemory - telemetry.performanceData.lastGC)
-        telemetry.performanceData.lastGC = currentMemory
+    -- Log event counts periodically instead of memory usage
+    local currentTime = os.clock()
+    if currentTime - telemetry.performanceData.lastCheck > 30 then -- Log every 30 seconds
+        local totalEvents = 0
+        for _, count in pairs(telemetry.performanceData.eventCounts) do
+            totalEvents = totalEvents + count
+        end
+        logger.debug("Performance", "Total events processed: " .. totalEvents)
+        telemetry.performanceData.lastCheck = currentTime
     end
 end
 
@@ -232,7 +236,7 @@ function telemetry.getPerformanceSummary()
     local runtime = os.clock() - telemetry.performanceData.startTime
     local summary = {
         runtime = runtime,
-        memoryUsage = collectgarbage("count"),
+        memoryUsage = 0, -- Memory tracking not available in ComputerCraft
         eventCounts = telemetry.performanceData.eventCounts,
         eventsPerSecond = {}
     }
@@ -274,7 +278,14 @@ function telemetry.cleanup()
     if telemetry.performanceData then
         local summary = telemetry.getPerformanceSummary()
         logger.info("Performance", "Final runtime: " .. string.format("%.2f", summary.runtime) .. " seconds")
-        logger.info("Performance", "Final memory usage: " .. string.format("%.2f", summary.memoryUsage) .. " KB")
+        
+        -- Log event summary instead of memory usage
+        local totalEvents = 0
+        for eventType, count in pairs(summary.eventCounts) do
+            totalEvents = totalEvents + count
+            logger.debug("Performance", eventType .. ": " .. count .. " events")
+        end
+        logger.info("Performance", "Total events processed: " .. totalEvents)
     end
     
     -- Export final logs
