@@ -89,15 +89,24 @@ end
 -- Main installation
 drawBanner()
 
-colorPrint("Setting up modular structure...", colors.cyan)
+colorPrint("Setting up advanced modular structure...", colors.cyan)
 sleep(0.5)
 
--- Create musicplayer directory
-if not fs.exists("musicplayer") then
-	fs.makeDir("musicplayer")
-	colorPrint("✓ Created musicplayer directory", colors.lime)
-else
-	colorPrint("✓ Musicplayer directory exists", colors.yellow)
+-- Create directory structure
+local directories = {
+	"musicplayer",
+	"musicplayer/telemetry",
+	"musicplayer/logs"
+}
+
+for _, dir in ipairs(directories) do
+	if not fs.exists(dir) then
+		fs.makeDir(dir)
+		colorPrint("✓ Created " .. dir .. " directory", colors.lime)
+	else
+		colorPrint("✓ " .. dir .. " directory exists", colors.yellow)
+	end
+	sleep(0.1)
 end
 
 sleep(0.3)
@@ -122,10 +131,13 @@ end
 
 sleep(0.5)
 
--- Files to download
+-- Files to download with new telemetry modules
 local files = {
+	-- Core files
 	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
 	{name = "uninstall.lua", url = baseUri .. "uninstall.lua", path = "uninstall.lua"},
+	
+	-- Core modules
 	{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
 	{name = "state.lua", url = baseUri .. "musicplayer/state.lua", path = "musicplayer/state.lua"},
 	{name = "ui.lua", url = baseUri .. "musicplayer/ui.lua", path = "musicplayer/ui.lua"},
@@ -135,10 +147,15 @@ local files = {
 	{name = "main.lua", url = baseUri .. "musicplayer/main.lua", path = "musicplayer/main.lua"},
 	{name = "menu.lua", url = baseUri .. "musicplayer/menu.lua", path = "musicplayer/menu.lua"},
 	{name = "radio.lua", url = baseUri .. "musicplayer/radio.lua", path = "musicplayer/radio.lua"},
-	{name = "radio_ui.lua", url = baseUri .. "musicplayer/radio_ui.lua", path = "musicplayer/radio_ui.lua"}
+	{name = "radio_ui.lua", url = baseUri .. "musicplayer/radio_ui.lua", path = "musicplayer/radio_ui.lua"},
+	
+	-- Telemetry modules
+	{name = "telemetry.lua", url = baseUri .. "musicplayer/telemetry/telemetry.lua", path = "musicplayer/telemetry/telemetry.lua"},
+	{name = "logger.lua", url = baseUri .. "musicplayer/telemetry/logger.lua", path = "musicplayer/telemetry/logger.lua"},
+	{name = "system_detector.lua", url = baseUri .. "musicplayer/telemetry/system_detector.lua", path = "musicplayer/telemetry/system_detector.lua"}
 }
 
-colorPrint("Downloading files...", colors.cyan)
+colorPrint("Downloading " .. #files .. " files...", colors.cyan)
 sleep(0.3)
 
 -- Download each file with animated progress
@@ -185,9 +202,9 @@ print()
 
 -- Create version file
 local versionFile = fs.open("version.txt", "w")
-versionFile.write("2.1")
+versionFile.write("3.2")
 versionFile.close()
-colorPrint("✓ Created version file", colors.lime)
+colorPrint("✓ Created version file (v3.2)", colors.lime)
 
 sleep(0.5)
 
@@ -198,19 +215,21 @@ colorPrint("Installation complete!", colors.lime)
 
 -- Feature list with colors
 sleep(0.3)
-colorPrint("This modular radio player features:", colors.cyan)
+colorPrint("This advanced radio player features:", colors.cyan)
 local features = {
-	"• Clean separation of concerns",
-	"• Easy to maintain and extend", 
+	"• Advanced telemetry and logging system",
+	"• Dual-screen support with debug console",
+	"• Computer and turtle detection",
+	"• Comprehensive error handling",
+	"• Performance monitoring",
 	"• YouTube search and streaming",
-	"• Queue management",
-	"• Volume controls",
-	"• Loop modes",
+	"• Network radio functionality",
+	"• Queue management and volume controls",
 	"• Modern touch interface"
 }
 
 for i, feature in ipairs(features) do
-	local featureColors = {colors.yellow, colors.orange, colors.red, colors.magenta, colors.purple, colors.blue, colors.cyan}
+	local featureColors = {colors.yellow, colors.orange, colors.red, colors.magenta, colors.purple, colors.blue, colors.cyan, colors.lime, colors.white}
 	local colorIndex = ((i - 1) % #featureColors) + 1
 	colorPrint(feature, featureColors[colorIndex])
 	sleep(0.1)
@@ -243,8 +262,9 @@ local steps = {
 	{text = "1. Type: ", color = colors.white, code = "startup", codeColor = colors.yellow},
 	{text = "2. Press Enter to launch", color = colors.white},
 	{text = "3. Connect speakers if needed", color = colors.lightGray},
-	{text = "4. Search for music on YouTube", color = colors.lightGray},
-	{text = "5. Enjoy your music!", color = colors.lime}
+	{text = "4. For dual-screen: Connect 2 monitors", color = colors.lightGray},
+	{text = "5. Check logs in musicplayer/logs/", color = colors.lightGray},
+	{text = "6. Enjoy your enhanced music experience!", color = colors.lime}
 }
 
 for i, step in ipairs(steps) do
@@ -275,11 +295,12 @@ term.setBackgroundColor(colors.black)
 term.setCursorPos(1, currentY + 3)
 
 -- Additional tips
-colorPrint("Tips:", colors.yellow)
-colorPrint("• Use the Search tab to find YouTube videos", colors.lightGray)
-colorPrint("• Click volume bar to adjust sound", colors.lightGray)
-colorPrint("• Try pasting YouTube playlist links", colors.lightGray)
-colorPrint("• Use Loop button to repeat songs/queue", colors.lightGray)
+colorPrint("New Features:", colors.yellow)
+colorPrint("• Real-time system monitoring", colors.lightGray)
+colorPrint("• Automatic dual-screen detection", colors.lightGray)
+colorPrint("• Comprehensive logging to files", colors.lightGray)
+colorPrint("• Performance metrics tracking", colors.lightGray)
+colorPrint("• Enhanced error reporting", colors.lightGray)
 colorPrint("• Type 'uninstall' to remove the system", colors.lightGray)
 
 sleep(0.5)
@@ -288,7 +309,7 @@ sleep(0.5)
 local _, currentY = term.getCursorPos()
 term.setCursorPos(1, currentY + 2)
 term.setTextColor(colors.lime)
-term.write("Ready to rock! ")
+term.write("Ready to rock with telemetry! ")
 term.setTextColor(colors.yellow)
 term.write("Type 'startup' to begin!")
 

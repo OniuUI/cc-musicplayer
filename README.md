@@ -1,6 +1,6 @@
 # Bognesferga Radio
 
-A comprehensive music and radio system for ComputerCraft that combines YouTube music streaming with network radio functionality for synchronized playback across multiple computers.
+A comprehensive music and radio system for ComputerCraft that combines YouTube music streaming with network radio functionality for synchronized playback across multiple computers. Now featuring advanced telemetry and logging capabilities.
 
 ## Features
 
@@ -20,12 +20,21 @@ A comprehensive music and radio system for ComputerCraft that combines YouTube m
 - **Real-time Listener Count**: See how many people are tuned in
 - **Seamless Integration**: Use YouTube search to add songs to radio playlists
 
+### 📊 Advanced Telemetry & Logging
+- **Comprehensive System Detection**: Automatic detection of computer type, peripherals, and capabilities
+- **Dual-Screen Support**: Separate application and debug console displays
+- **Real-time Performance Monitoring**: Memory usage, event tracking, and system health
+- **Detailed Logging**: Session logs, error tracking, and emergency logging
+- **System Health Monitoring**: Peripheral connectivity and performance metrics
+- **Automatic Log Management**: File-based logging with rotation and export capabilities
+
 ### 🎨 Enhanced User Experience
 - **Main Menu System**: Choose between YouTube player and network radio
 - **Colorful Interface**: Professional design with cyan/lime accents and rainbow elements
 - **Animated Branding**: "Developed by Forty" rainbow footer
 - **Status Indicators**: Visual feedback for all system states
 - **Responsive Design**: Adapts to different screen sizes
+- **Error Recovery**: Graceful error handling with automatic recovery
 
 ## Installation
 
@@ -44,54 +53,61 @@ install
 
 - **ComputerCraft**: CC: Tweaked for Minecraft 1.18.2+
 - **Speaker**: At least one speaker peripheral attached to the computer
-- **Wireless Modem**: Required for network radio features
-- **Internet Access**: HTTP requests must be enabled in ComputerCraft config
+- **Internet Access**: HTTP requests must be enabled in ComputerCraft configuration
+- **Optional**: Monitor(s) for dual-screen telemetry display
+- **Optional**: Wireless modem for network radio functionality
 
-## How to Use
+### Recommended Setup
+- **Advanced Computer**: For color support and enhanced features
+- **Multiple Monitors**: Primary display for application, secondary for debug console
+- **Multiple Speakers**: For enhanced audio experience
+- **Wireless Modem**: For network radio features
 
-### Starting the System
-1. Run the installer using one of the methods above
-2. The system will automatically start with the main menu
-3. Choose your desired experience:
-   - **YouTube Music Player**: Traditional music streaming
-   - **Network Radio**: Connect to shared radio stations
-   - **Host Radio Station**: Create your own radio station
+## Usage
+
+### Getting Started
+1. Run `startup` to launch Bognesferga Radio
+2. Choose from the main menu:
+   - **YouTube Music Player**: Search and play music
+   - **Network Radio**: Connect to shared stations
+   - **Host Radio Station**: Create your own station
+   - **Exit**: Close the application
 
 ### YouTube Music Player
 1. Select "YouTube Music Player" from the main menu
 2. Click the "Search" tab to find music
 3. Type your search query and press Enter
-4. Click on any result to see playback options:
-   - **Play now**: Start playing immediately
-   - **Play next**: Add to front of queue
-   - **Add to queue**: Add to end of queue
-5. Use the volume slider to adjust audio level
-6. Press ESC to return to the main menu
+4. Click on search results to add to queue or play immediately
+5. Use the "Now Playing" tab to control playback
+6. Adjust volume with the interactive slider
+7. Use loop controls for repeat functionality
 
-### Network Radio - Client
+### Network Radio
+#### Connecting to a Station
 1. Select "Network Radio" from the main menu
-2. Press 'S' to scan for available radio stations
-3. Use UP/DOWN arrows to select a station
-4. Press ENTER to connect to the selected station
-5. Enjoy synchronized music with other listeners!
-6. Press 'D' to disconnect or ESC to return to menu
+2. Click "Scan for Stations" to find available stations
+3. Select a station from the list
+4. Click "Connect to Selected" to join
 
-### Network Radio - Host
+#### Hosting a Station
 1. Select "Host Radio Station" from the main menu
-2. Enter a name for your radio station
-3. Press 'A' to add songs to your playlist using YouTube search
-4. Press SPACE to start/stop broadcasting
-5. Press 'N' to skip to the next track
-6. Monitor listener count in real-time
-7. Press ESC to stop the station and return to menu
+2. Enter a name for your station
+3. Click "Add Songs" to build your playlist
+4. Click "Start Broadcast" to begin streaming
+5. Manage your playlist and control playback
 
-## Network Radio Technical Details
+### Telemetry Features
+- **System Information**: View detailed hardware and peripheral information
+- **Performance Monitoring**: Track memory usage and system performance
+- **Log Files**: Access detailed logs in `musicplayer/logs/`
+- **Dual-Screen Mode**: Use separate monitors for application and debugging
+- **Health Monitoring**: Real-time peripheral connectivity status
 
-The network radio system uses ComputerCraft's rednet API for communication:
+## Network Radio Setup
 
-- **Protocol**: `bognesferga_radio` for messages, `radio_station` for discovery
-- **Synchronization**: Automatic time offset calculation for synchronized playback
-- **Range**: Standard wireless modem range (64+ blocks, more at higher altitudes)
+### Requirements for Network Radio
+- **Wireless Modem**: Attached to the computer (any side)
+- **Network Range**: All computers must be within wireless range
 - **Compatibility**: Works with both wireless and ender modems
 
 ### Setting Up a Radio Network
@@ -102,10 +118,10 @@ The network radio system uses ComputerCraft's rednet API for communication:
 
 ## Architecture
 
-The system is built with a modular architecture:
+The system is built with a modular architecture featuring comprehensive telemetry:
 
 ```
-startup.lua          # Main entry point and menu system
+startup.lua          # Main entry point with telemetry integration
 musicplayer/
 ├── config.lua       # Configuration and constants
 ├── state.lua        # Global state management
@@ -116,7 +132,11 @@ musicplayer/
 ├── main.lua         # YouTube player coordination
 ├── menu.lua         # Main menu system
 ├── radio.lua        # Network radio logic
-└── radio_ui.lua     # Radio interface rendering
+├── radio_ui.lua     # Radio interface rendering
+└── telemetry/       # Advanced telemetry system
+    ├── telemetry.lua      # Main telemetry coordinator
+    ├── logger.lua         # File and monitor logging
+    └── system_detector.lua # Hardware detection
 ```
 
 ## Troubleshooting
@@ -124,41 +144,69 @@ musicplayer/
 ### No Speakers Found
 - Attach at least one speaker peripheral to any side of the computer
 - For pocket computers, equip a speaker upgrade
+- Check telemetry logs for peripheral detection issues
 
 ### Network Radio Issues
 - Ensure wireless modem is attached and functioning
 - Check that computers are within wireless range
 - Verify HTTP is enabled in ComputerCraft configuration
 - Try restarting both host and client computers
+- Check telemetry logs for network connectivity issues
 
 ### Audio Playback Problems
 - Check internet connectivity
 - Verify the YouTube API is accessible
 - Ensure speakers have adequate power (if using mods that require it)
+- Review audio logs in the telemetry system
 
 ### Installation Failures
 - Confirm HTTP requests are enabled in server configuration
 - Check that GitHub is accessible from your server
 - Try the pastebin installation method as an alternative
+- Review installation logs for specific error details
+
+### Telemetry Issues
+- Check `musicplayer/logs/` directory for detailed error logs
+- Verify monitor connections for dual-screen functionality
+- Review system report in `musicplayer/telemetry/system_report.txt`
+- Check emergency logs for critical system issues
 
 ## Version History
 
+- **v3.1**: Restored complete functionality with integrated telemetry system
+- **v3.0**: Added comprehensive telemetry, logging, and dual-screen support
 - **v2.1**: Added main menu system and network radio functionality
-- **v2.0**: Complete rewrite with modular architecture and enhanced UI
-- **v1.x**: Original file-based music player system
+- **v2.0**: Complete rewrite with iPod-style interface and API integration
+- **v1.x**: Original music streaming player
 
-## Credits
+## Advanced Features
 
-**Developed by Forty**
+### Telemetry System
+- **System Detection**: Automatic identification of computer type and capabilities
+- **Performance Metrics**: Real-time monitoring of memory usage and event processing
+- **Health Monitoring**: Continuous peripheral connectivity checks
+- **Dual-Screen Support**: Separate application and debug displays
+- **Comprehensive Logging**: Multiple log levels with file rotation
 
-- Original concept inspired by iPod-style music players
-- Built for the ComputerCraft community
-- Uses CC: Tweaked's speaker and rednet APIs
-- YouTube integration via custom API endpoint
+### Error Handling
+- **Graceful Recovery**: Automatic error recovery with menu fallback
+- **Emergency Logging**: Critical error capture and reporting
+- **Resource Cleanup**: Proper cleanup of audio streams and network connections
+- **User Feedback**: Clear error messages with troubleshooting guidance
+
+### Performance Optimization
+- **Modular Architecture**: Efficient loading and memory management
+- **Parallel Processing**: Concurrent audio, UI, and network handling
+- **Resource Monitoring**: Automatic garbage collection and memory tracking
+- **Event Optimization**: Efficient event handling and processing
+
+## Support
+
+For issues, feature requests, or contributions, please check the telemetry logs first for detailed error information. The system provides comprehensive logging to help diagnose and resolve issues quickly.
 
 ## License
 
-This project is open source and available under the MIT License. Feel free to modify and distribute according to your needs.
+This project is open source and available under the MIT License.
 
 ---
 
