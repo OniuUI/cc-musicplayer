@@ -130,9 +130,6 @@ local function removeFiles()
         -- New modular files
         "musicplayer/core/system.lua",
         "musicplayer/utils/common.lua",
-        "musicplayer/utils/string_utils.lua",
-        "musicplayer/utils/table_utils.lua",
-        "musicplayer/utils/time_utils.lua",
         "musicplayer/middleware/error_handler.lua",
         "musicplayer/network/http_client.lua",
         "musicplayer/network/radio_protocol.lua",

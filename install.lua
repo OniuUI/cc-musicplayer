@@ -169,9 +169,6 @@ local files = {
 	
 	-- Utilities
 	{name = "common.lua", url = baseUri .. "musicplayer/utils/common.lua", path = "musicplayer/utils/common.lua"},
-	{name = "string_utils.lua", url = baseUri .. "musicplayer/utils/string_utils.lua", path = "musicplayer/utils/string_utils.lua"},
-	{name = "table_utils.lua", url = baseUri .. "musicplayer/utils/table_utils.lua", path = "musicplayer/utils/table_utils.lua"},
-	{name = "time_utils.lua", url = baseUri .. "musicplayer/utils/time_utils.lua", path = "musicplayer/utils/time_utils.lua"},
 	
 	-- Middleware
 	{name = "error_handler.lua", url = baseUri .. "musicplayer/middleware/error_handler.lua", path = "musicplayer/middleware/error_handler.lua"},
