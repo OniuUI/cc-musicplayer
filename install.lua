@@ -20,7 +20,7 @@ local function drawBanner()
 	local w, h = term.getSize()
 	
 	-- Center the banner text
-	local bannerText = "  iPod-Style Music Player Installer  "
+	local bannerText = "  Bognesferga Radio Installer  "
 	local startX = math.floor((w - #bannerText) / 2) + 1
 	term.setCursorPos(startX, 1)
 	animateText(bannerText, colors.white, 0.03)
@@ -174,7 +174,8 @@ for i, file in ipairs(files) do
 end
 
 -- Final progress bar
-term.setCursorPos(1, term.getCursorPosY())
+local _, currentY = term.getCursorPos()
+term.setCursorPos(1, currentY)
 animatedProgress(#files, #files, colors.lime)
 print()
 
@@ -187,12 +188,13 @@ colorPrint("✓ Created version file", colors.lime)
 sleep(0.5)
 
 -- Success animation
-term.setCursorPos(1, term.getCursorPosY() + 1)
+local _, currentY = term.getCursorPos()
+term.setCursorPos(1, currentY + 1)
 colorPrint("Installation complete!", colors.lime)
 
 -- Feature list with colors
 sleep(0.3)
-colorPrint("This modular music player features:", colors.cyan)
+colorPrint("This modular radio player features:", colors.cyan)
 local features = {
 	"• Clean separation of concerns",
 	"• Easy to maintain and extend", 
@@ -213,13 +215,14 @@ end
 sleep(0.5)
 
 -- Final message with animation
-term.setCursorPos(1, term.getCursorPosY() + 1)
+local _, currentY = term.getCursorPos()
+term.setCursorPos(1, currentY + 1)
 term.setTextColor(colors.white)
 term.write("Run ")
 term.setTextColor(colors.yellow)
 term.write("'startup'")
 term.setTextColor(colors.white)
-term.write(" to begin using your new music player!")
+term.write(" to begin using your new radio player!")
 
 -- Blinking cursor effect
 for i = 1, 3 do
@@ -227,9 +230,10 @@ for i = 1, 3 do
 	term.setTextColor(colors.lime)
 	term.write(" ●")
 	sleep(0.5)
-	term.setCursorPos(term.getCursorPos() - 1, term.getCursorPosY())
+	local x, y = term.getCursorPos()
+	term.setCursorPos(x - 1, y)
 	term.write(" ")
-	term.setCursorPos(term.getCursorPos() - 1, term.getCursorPosY())
+	term.setCursorPos(x - 1, y)
 end
 
 term.setTextColor(colors.white)
