@@ -149,6 +149,12 @@ local files = {
 	{name = "radio.lua", url = baseUri .. "musicplayer/radio.lua", path = "musicplayer/radio.lua"},
 	{name = "radio_ui.lua", url = baseUri .. "musicplayer/radio_ui.lua", path = "musicplayer/radio_ui.lua"},
 	
+	-- New modular architecture files
+	{name = "system_init.lua", url = baseUri .. "musicplayer/system_init.lua", path = "musicplayer/system_init.lua"},
+	{name = "app_manager.lua", url = baseUri .. "musicplayer/app_manager.lua", path = "musicplayer/app_manager.lua"},
+	{name = "input_handlers.lua", url = baseUri .. "musicplayer/input_handlers.lua", path = "musicplayer/input_handlers.lua"},
+	{name = "mode_handlers.lua", url = baseUri .. "musicplayer/mode_handlers.lua", path = "musicplayer/mode_handlers.lua"},
+	
 	-- Telemetry modules
 	{name = "telemetry.lua", url = baseUri .. "musicplayer/telemetry/telemetry.lua", path = "musicplayer/telemetry/telemetry.lua"},
 	{name = "logger.lua", url = baseUri .. "musicplayer/telemetry/logger.lua", path = "musicplayer/telemetry/logger.lua"},
@@ -202,9 +208,9 @@ print()
 
 -- Create version file
 local versionFile = fs.open("version.txt", "w")
-versionFile.write("3.2")
+versionFile.write("4.0")
 versionFile.close()
-colorPrint("✓ Created version file (v3.2)", colors.lime)
+colorPrint("✓ Created version file (v4.0)", colors.lime)
 
 sleep(0.5)
 

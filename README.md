@@ -118,10 +118,10 @@ install
 
 ## Architecture
 
-The system is built with a modular architecture featuring comprehensive telemetry:
+The system is built with a completely modular architecture featuring comprehensive telemetry and clean separation of concerns:
 
 ```
-startup.lua          # Main entry point with telemetry integration
+startup.lua          # Main entry point (50 lines) - coordinates all modules
 musicplayer/
 ├── config.lua       # Configuration and constants
 ├── state.lua        # Global state management
@@ -131,13 +131,24 @@ musicplayer/
 ├── network.lua      # HTTP request/response handling
 ├── main.lua         # YouTube player coordination
 ├── menu.lua         # Main menu system
-├── radio.lua        # Network radio logic
+├── radio.lua        # Network radio functionality
 ├── radio_ui.lua     # Radio interface rendering
-└── telemetry/       # Advanced telemetry system
+├── system_init.lua  # System initialization and module loading
+├── app_manager.lua  # Application state and main loop management
+├── input_handlers.lua # Specialized input functions
+├── mode_handlers.lua # Mode-specific loop handlers (YouTube, radio)
+└── telemetry/
     ├── telemetry.lua      # Main telemetry coordinator
-    ├── logger.lua         # File and monitor logging
+    ├── logger.lua         # Advanced logging system
     └── system_detector.lua # Hardware detection
 ```
+
+### **New Modular Design (v4.0)**
+- **Startup Simplification**: Reduced from 652 lines to 50 lines
+- **Clean Separation**: Each module has a single responsibility
+- **Easy Maintenance**: Individual modules can be updated independently
+- **Better Testing**: Modules can be tested in isolation
+- **Improved Readability**: Code is organized by functionality
 
 ## Troubleshooting
 

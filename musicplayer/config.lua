@@ -2,7 +2,7 @@
 local config = {}
 
 config.api_base_url = "https://ipod-2to6magyna-uc.a.run.app/"
-config.version = "3.2"
+config.version = "4.0"
 config.default_volume = 1.5
 config.max_volume = 3.0
 config.chunk_size = 16 * 1024 - 4
