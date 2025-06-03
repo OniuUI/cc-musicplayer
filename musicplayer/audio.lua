@@ -143,4 +143,107 @@ function audio.playSpeaker(speaker, buffer, volume, playing, playingId, trackId)
     end
 end
 
+-- New functions for radio support
+function audio.stopAudio()
+    -- Stop all speakers
+    local speakers = { peripheral.find("speaker") }
+    for _, speaker in ipairs(speakers) do
+        speaker.stop()
+    end
+    
+    -- Send stop event to interrupt audio processing
+    os.queueEvent("playback_stopped")
+end
+
+function audio.playFromUrl(streamUrl, startPosition)
+    startPosition = startPosition or 0
+    
+    -- Stop any current playback
+    audio.stopAudio()
+    
+    -- Request the stream with optional start position
+    local requestUrl = streamUrl
+    if startPosition > 0 then
+        -- Add start position parameter if the API supports it
+        requestUrl = streamUrl .. "&t=" .. math.floor(startPosition)
+    end
+    
+    http.request({url = requestUrl, binary = true})
+    
+    -- Handle the response in a separate coroutine
+    parallel.waitForAny(
+        function()
+            while true do
+                local event, url, handle = os.pullEvent("http_success")
+                if url == requestUrl then
+                    audio.streamFromHandle(handle)
+                    break
+                end
+            end
+        end,
+        function()
+            while true do
+                local event, url = os.pullEvent("http_failure")
+                if url == requestUrl then
+                    -- Handle error
+                    break
+                end
+            end
+        end
+    )
+end
+
+function audio.streamFromHandle(handle)
+    local speakers = { peripheral.find("speaker") }
+    if #speakers == 0 then
+        handle.close()
+        return
+    end
+    
+    local decoder = require("cc.audio.dfpwm").make_decoder()
+    local chunkSize = 16 * 1024
+    
+    while true do
+        local chunk = handle.read(chunkSize)
+        if not chunk then
+            break
+        end
+        
+        local buffer = decoder(chunk)
+        
+        -- Play on all speakers
+        local speakerFunctions = {}
+        for i, speaker in ipairs(speakers) do
+            speakerFunctions[i] = function()
+                local name = peripheral.getName(speaker)
+                while not speaker.playAudio(buffer, 1.0) do
+                    parallel.waitForAny(
+                        function()
+                            repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                        end,
+                        function()
+                            os.pullEvent("playback_stopped")
+                            return
+                        end
+                    )
+                end
+            end
+        end
+        
+        local ok = pcall(parallel.waitForAll, table.unpack(speakerFunctions))
+        if not ok then
+            break
+        end
+        
+        -- Check for stop event
+        local event = os.pullEvent()
+        if event == "playback_stopped" then
+            break
+        end
+        os.queueEvent(event) -- Re-queue the event if it wasn't a stop
+    end
+    
+    handle.close()
+end
+
 return audio 

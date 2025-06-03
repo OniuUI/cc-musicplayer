@@ -122,7 +122,7 @@ end
 
 sleep(0.5)
 
--- List of files to download
+-- Files to download
 local files = {
 	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
 	{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
@@ -131,7 +131,10 @@ local files = {
 	{name = "input.lua", url = baseUri .. "musicplayer/input.lua", path = "musicplayer/input.lua"},
 	{name = "audio.lua", url = baseUri .. "musicplayer/audio.lua", path = "musicplayer/audio.lua"},
 	{name = "network.lua", url = baseUri .. "musicplayer/network.lua", path = "musicplayer/network.lua"},
-	{name = "main.lua", url = baseUri .. "musicplayer/main.lua", path = "musicplayer/main.lua"}
+	{name = "main.lua", url = baseUri .. "musicplayer/main.lua", path = "musicplayer/main.lua"},
+	{name = "menu.lua", url = baseUri .. "musicplayer/menu.lua", path = "musicplayer/menu.lua"},
+	{name = "radio.lua", url = baseUri .. "musicplayer/radio.lua", path = "musicplayer/radio.lua"},
+	{name = "radio_ui.lua", url = baseUri .. "musicplayer/radio_ui.lua", path = "musicplayer/radio_ui.lua"}
 }
 
 colorPrint("Downloading files...", colors.cyan)
