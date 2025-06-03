@@ -42,17 +42,25 @@ else
 	speaker.playNote(instr, 3, 16)
 	sleep(0.01)
 
-	local updateUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/main/version.txt"
+	local updateUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/version.txt"
 
 	local updateResponse = http.get(updateUri)
 
-	if fs.exists("version.txt") then
+	if updateResponse and fs.exists("version.txt") then
 		local updateFile = fs.open("version.txt", "r")
+		local currentVersion = updateFile.readAll()
+		updateFile.close()
+		
+		local remoteVersion = updateResponse.readAll()
+		updateResponse.close()
 
-		if updateFile.readAll() ~= updateResponse.readAll() then
+		if currentVersion ~= remoteVersion then
 			print("")
 			print("NOTE - There is an update available! To get the latest version, type 'download' into the console.")
 		end
+	elseif not updateResponse then
+		-- Silently fail if we can't check for updates (no internet, etc.)
+		-- This prevents the error but doesn't spam the user with warnings
 	end
 end
 
