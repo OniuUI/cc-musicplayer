@@ -232,6 +232,40 @@ local function runRadioClient(appState)
     end
 end
 
+-- Add songs to radio playlist using YouTube search
+local function addSongsToPlaylist(appState)
+    -- Create a temporary music state for searching
+    local searchState = state.init()
+    searchState.tab = 2 -- Search tab
+    searchState.width = appState.width
+    searchState.height = appState.height
+    
+    while true do
+        ui.redrawScreen(searchState)
+        
+        local event, key, x, y = os.pullEvent()
+        
+        if event == "key" then
+            if key == keys.escape then
+                break
+            end
+        elseif event == "mouse_click" then
+            local result = input.handleClick(searchState, x, y)
+            if result == "back" then
+                break
+            elseif result == "search" then
+                input.handleSearchInput(searchState)
+            elseif type(result) == "table" and result.action == "add_to_radio" then
+                -- Add selected song to radio playlist
+                radio.addToPlaylist(appState.radioState, result.song)
+                break
+            end
+        end
+        
+        sleep(0.05)
+    end
+end
+
 -- Radio host loop
 local function runRadioHost(appState)
     while appState.mode == "radio_host" do
@@ -305,40 +339,6 @@ local function runRadioHost(appState)
         end
         
         sleep(0.1) -- Small delay to prevent excessive CPU usage
-    end
-end
-
--- Add songs to radio playlist using YouTube search
-local function addSongsToPlaylist(appState)
-    -- Create a temporary music state for searching
-    local searchState = state.init()
-    searchState.tab = 2 -- Search tab
-    searchState.width = appState.width
-    searchState.height = appState.height
-    
-    while true do
-        ui.redrawScreen(searchState)
-        
-        local event, key, x, y = os.pullEvent()
-        
-        if event == "key" then
-            if key == keys.escape then
-                break
-            end
-        elseif event == "mouse_click" then
-            local result = input.handleClick(searchState, x, y)
-            if result == "back" then
-                break
-            elseif result == "search" then
-                input.handleSearchInput(searchState)
-            elseif type(result) == "table" and result.action == "add_to_radio" then
-                -- Add selected song to radio playlist
-                radio.addToPlaylist(appState.radioState, result.song)
-                break
-            end
-        end
-        
-        sleep(0.05)
     end
 end
 
