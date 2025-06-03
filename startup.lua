@@ -153,9 +153,10 @@ local function runRadioClient(appState)
         radio.handleClientMessages(appState.radioState)
         
         -- Handle input
-        local event, key = os.pullEvent()
+        local event, button, x, y = os.pullEvent()
         
         if event == "key" then
+            local key = button
             if key == keys.escape then
                 radio.shutdown(appState.radioState)
                 appState.mode = "menu"
@@ -178,6 +179,40 @@ local function runRadioClient(appState)
             elseif key == keys.d and appState.radioState.connected_station then
                 radio.disconnectFromStation(appState.radioState)
             end
+        elseif event == "mouse_click" then
+            -- Check for button clicks
+            if appState.radioState.scan_button and 
+               x >= appState.radioState.scan_button.x1 and x <= appState.radioState.scan_button.x2 and
+               y >= appState.radioState.scan_button.y1 and y <= appState.radioState.scan_button.y2 then
+                radio.scanForStations(appState.radioState)
+            elseif appState.radioState.connect_button and 
+                   x >= appState.radioState.connect_button.x1 and x <= appState.radioState.connect_button.x2 and
+                   y >= appState.radioState.connect_button.y1 and y <= appState.radioState.connect_button.y2 then
+                if #appState.radioState.station_list > 0 then
+                    local selectedStation = appState.radioState.station_list[appState.radioState.selected_station]
+                    radio.connectToStation(appState.radioState, selectedStation.id)
+                end
+            elseif appState.radioState.disconnect_button and 
+                   x >= appState.radioState.disconnect_button.x1 and x <= appState.radioState.disconnect_button.x2 and
+                   y >= appState.radioState.disconnect_button.y1 and y <= appState.radioState.disconnect_button.y2 then
+                radio.disconnectFromStation(appState.radioState)
+            elseif appState.radioState.back_button and 
+                   x >= appState.radioState.back_button.x1 and x <= appState.radioState.back_button.x2 and
+                   y >= appState.radioState.back_button.y1 and y <= appState.radioState.back_button.y2 then
+                radio.shutdown(appState.radioState)
+                appState.mode = "menu"
+                break
+            else
+                -- Check for station selection clicks
+                for i, station in ipairs(appState.radioState.station_list) do
+                    if station.click_area and 
+                       x >= station.click_area.x1 and x <= station.click_area.x2 and
+                       y >= station.click_area.y1 and y <= station.click_area.y2 then
+                        appState.radioState.selected_station = i
+                        break
+                    end
+                end
+            end
         end
         
         sleep(0.1) -- Small delay to prevent excessive CPU usage
@@ -193,9 +228,10 @@ local function runRadioHost(appState)
         radio.handleHostMessages(appState.radioState)
         
         -- Handle input
-        local event, key = os.pullEvent()
+        local event, button, x, y = os.pullEvent()
         
         if event == "key" then
+            local key = button
             if key == keys.escape then
                 radio.shutdown(appState.radioState)
                 appState.mode = "menu"
@@ -212,6 +248,46 @@ local function runRadioHost(appState)
                 end
             elseif key == keys.n and #appState.radioState.playlist > 0 then
                 radio.hostNextTrack(appState.radioState)
+            end
+        elseif event == "mouse_click" then
+            -- Check for button clicks
+            if appState.radioState.add_button and 
+               x >= appState.radioState.add_button.x1 and x <= appState.radioState.add_button.x2 and
+               y >= appState.radioState.add_button.y1 and y <= appState.radioState.add_button.y2 then
+                addSongsToPlaylist(appState)
+            elseif appState.radioState.play_stop_button and 
+                   x >= appState.radioState.play_stop_button.x1 and x <= appState.radioState.play_stop_button.x2 and
+                   y >= appState.radioState.play_stop_button.y1 and y <= appState.radioState.play_stop_button.y2 then
+                if #appState.radioState.playlist > 0 then
+                    if appState.radioState.is_playing then
+                        radio.hostStopPlayback(appState.radioState)
+                    else
+                        local currentSong = appState.radioState.playlist[appState.radioState.current_track]
+                        radio.hostPlaySong(appState.radioState, currentSong)
+                    end
+                end
+            elseif appState.radioState.next_button and 
+                   x >= appState.radioState.next_button.x1 and x <= appState.radioState.next_button.x2 and
+                   y >= appState.radioState.next_button.y1 and y <= appState.radioState.next_button.y2 then
+                if #appState.radioState.playlist > 0 then
+                    radio.hostNextTrack(appState.radioState)
+                end
+            elseif appState.radioState.back_button and 
+                   x >= appState.radioState.back_button.x1 and x <= appState.radioState.back_button.x2 and
+                   y >= appState.radioState.back_button.y1 and y <= appState.radioState.back_button.y2 then
+                radio.shutdown(appState.radioState)
+                appState.mode = "menu"
+                break
+            else
+                -- Check for playlist track selection clicks
+                for i, song in ipairs(appState.radioState.playlist) do
+                    if song.click_area and 
+                       x >= song.click_area.x1 and x <= song.click_area.x2 and
+                       y >= song.click_area.y1 and y <= song.click_area.y2 then
+                        appState.radioState.current_track = i
+                        break
+                    end
+                end
             end
         end
         

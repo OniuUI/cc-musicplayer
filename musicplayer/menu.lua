@@ -46,10 +46,21 @@ function menu.drawMenu(state, menuState)
             term.setTextColor(config.ui.colors.text_primary)
         end
         
-        -- Option box
+        -- Option box - make it wider for better clicking
         term.setCursorPos(3, y)
         term.clearLine()
-        term.write(" " .. option.name .. " ")
+        local buttonText = " " .. option.name .. " "
+        local buttonWidth = math.max(#buttonText + 4, 25) -- Minimum width for easier clicking
+        local paddedText = " " .. option.name .. string.rep(" ", buttonWidth - #buttonText - 1)
+        term.write(paddedText)
+        
+        -- Store click area for this option
+        menuState.options[i].click_area = {
+            x1 = 3,
+            y1 = y,
+            x2 = 3 + buttonWidth - 1,
+            y2 = y
+        }
         
         -- Description
         term.setBackgroundColor(config.ui.colors.background)
@@ -61,7 +72,7 @@ function menu.drawMenu(state, menuState)
     -- Instructions
     term.setTextColor(config.ui.colors.text_disabled)
     term.setCursorPos(3, state.height - 3)
-    term.write("Use UP/DOWN arrows to navigate, ENTER to select")
+    term.write("Click on an option above or use UP/DOWN arrows + ENTER")
     
     -- Draw footer
     menu.drawFooter(state)
@@ -113,22 +124,35 @@ end
 
 function menu.handleInput(menuState)
     while true do
-        local event, key = os.pullEvent("key")
+        local event, button, x, y = os.pullEvent()
         
-        if key == keys.up then
-            menuState.selected_option = menuState.selected_option - 1
-            if menuState.selected_option < 1 then
-                menuState.selected_option = #menuState.options
+        if event == "key" then
+            local key = button
+            if key == keys.up then
+                menuState.selected_option = menuState.selected_option - 1
+                if menuState.selected_option < 1 then
+                    menuState.selected_option = #menuState.options
+                end
+                return "redraw"
+            elseif key == keys.down then
+                menuState.selected_option = menuState.selected_option + 1
+                if menuState.selected_option > #menuState.options then
+                    menuState.selected_option = 1
+                end
+                return "redraw"
+            elseif key == keys.enter then
+                return menuState.options[menuState.selected_option].name
             end
-            return "redraw"
-        elseif key == keys.down then
-            menuState.selected_option = menuState.selected_option + 1
-            if menuState.selected_option > #menuState.options then
-                menuState.selected_option = 1
+        elseif event == "mouse_click" then
+            -- Check if click is on any menu option
+            for i, option in ipairs(menuState.options) do
+                if option.click_area and 
+                   x >= option.click_area.x1 and x <= option.click_area.x2 and
+                   y >= option.click_area.y1 and y <= option.click_area.y2 then
+                    menuState.selected_option = i
+                    return option.name
+                end
             end
-            return "redraw"
-        elseif key == keys.enter then
-            return menuState.options[menuState.selected_option].name
         end
     end
 end

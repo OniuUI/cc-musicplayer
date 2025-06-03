@@ -61,7 +61,18 @@ function radio_ui.drawClientInterface(state, radioState)
             
             term.setCursorPos(3, y)
             term.clearLine()
-            term.write(" " .. station.name .. " ")
+            local buttonText = " " .. station.name .. " "
+            local buttonWidth = math.max(#buttonText + 4, 30) -- Wider for easier clicking
+            local paddedText = " " .. station.name .. string.rep(" ", buttonWidth - #buttonText - 1)
+            term.write(paddedText)
+            
+            -- Store click area for this station
+            radioState.station_list[i].click_area = {
+                x1 = 3,
+                y1 = y,
+                x2 = 3 + buttonWidth - 1,
+                y2 = y
+            }
             
             -- Station info
             term.setBackgroundColor(config.ui.colors.background)
@@ -78,7 +89,7 @@ function radio_ui.drawClientInterface(state, radioState)
         term.setCursorPos(3, 9)
         term.write("No radio stations found")
         term.setCursorPos(3, 10)
-        term.write("Press 'S' to scan for stations")
+        term.write("Click 'Scan for Stations' below")
     end
     
     -- Controls
@@ -130,23 +141,38 @@ function radio_ui.drawHostInterface(state, radioState)
     if #radioState.playlist > 0 then
         term.setTextColor(config.ui.colors.text_accent)
         term.setCursorPos(3, 11)
-        term.write("Playlist:")
+        term.write("Playlist (click to select):")
         
         local maxDisplay = math.min(#radioState.playlist, (state.height - 16) / 2)
         for i = 1, maxDisplay do
             local song = radioState.playlist[i]
             local y = 12 + (i - 1) * 2
             
+            -- Highlight current track
             if i == radioState.current_track then
-                term.setTextColor(config.ui.colors.playing)
-                term.write("▶ ")
+                term.setBackgroundColor(config.ui.colors.button_active)
+                term.setTextColor(config.ui.colors.background)
             else
+                term.setBackgroundColor(config.ui.colors.button)
                 term.setTextColor(config.ui.colors.text_primary)
-                term.write("  ")
             end
             
             term.setCursorPos(3, y)
-            term.write((i) .. ". " .. song.name)
+            term.clearLine()
+            local trackText = (i) .. ". " .. song.name
+            local buttonWidth = math.max(#trackText + 4, 35) -- Wider for easier clicking
+            local paddedText = " " .. trackText .. string.rep(" ", buttonWidth - #trackText - 1)
+            term.write(paddedText)
+            
+            -- Store click area for this track
+            radioState.playlist[i].click_area = {
+                x1 = 3,
+                y1 = y,
+                x2 = 3 + buttonWidth - 1,
+                y2 = y
+            }
+            
+            term.setBackgroundColor(config.ui.colors.background)
             term.setTextColor(config.ui.colors.text_secondary)
             term.setCursorPos(6, y + 1)
             term.write(song.artist)
@@ -162,7 +188,7 @@ function radio_ui.drawHostInterface(state, radioState)
         term.setCursorPos(3, 11)
         term.write("Playlist is empty")
         term.setCursorPos(3, 12)
-        term.write("Press 'A' to add songs from YouTube")
+        term.write("Click 'Add Songs' below to build your playlist")
     end
     
     -- Controls
@@ -175,52 +201,135 @@ end
 function radio_ui.drawClientControls(state, radioState)
     local controlsY = state.height - 5
     
-    term.setTextColor(config.ui.colors.text_disabled)
+    -- Scan button
+    term.setBackgroundColor(config.ui.colors.button)
+    term.setTextColor(config.ui.colors.text_primary)
     term.setCursorPos(3, controlsY)
-    term.write("Controls:")
+    local scanText = " Scan for Stations "
+    term.write(scanText)
+    radioState.scan_button = {
+        x1 = 3,
+        y1 = controlsY,
+        x2 = 3 + #scanText - 1,
+        y2 = controlsY
+    }
     
-    term.setCursorPos(3, controlsY + 1)
-    term.write("S - Scan for stations")
-    
-    if #radioState.station_list > 0 then
-        term.setCursorPos(3, controlsY + 2)
-        term.write("UP/DOWN - Select station, ENTER - Connect")
+    -- Connect button (only if stations available and not connected)
+    if #radioState.station_list > 0 and not radioState.connected_station then
+        term.setBackgroundColor(config.ui.colors.button)
+        term.setTextColor(config.ui.colors.text_primary)
+        term.setCursorPos(25, controlsY)
+        local connectText = " Connect to Selected "
+        term.write(connectText)
+        radioState.connect_button = {
+            x1 = 25,
+            y1 = controlsY,
+            x2 = 25 + #connectText - 1,
+            y2 = controlsY
+        }
     end
     
+    -- Disconnect button (only if connected)
     if radioState.connected_station then
-        term.setCursorPos(3, controlsY + 3)
-        term.write("D - Disconnect from station")
+        term.setBackgroundColor(config.ui.colors.button)
+        term.setTextColor(config.ui.colors.text_primary)
+        term.setCursorPos(25, controlsY)
+        local disconnectText = " Disconnect "
+        term.write(disconnectText)
+        radioState.disconnect_button = {
+            x1 = 25,
+            y1 = controlsY,
+            x2 = 25 + #disconnectText - 1,
+            y2 = controlsY
+        }
     end
     
+    -- Back button
+    term.setBackgroundColor(config.ui.colors.button)
+    term.setTextColor(config.ui.colors.text_primary)
+    term.setCursorPos(3, controlsY + 2)
+    local backText = " Back to Menu "
+    term.write(backText)
+    radioState.back_button = {
+        x1 = 3,
+        y1 = controlsY + 2,
+        x2 = 3 + #backText - 1,
+        y2 = controlsY + 2
+    }
+    
+    term.setBackgroundColor(config.ui.colors.background)
+    term.setTextColor(config.ui.colors.text_disabled)
     term.setCursorPos(3, controlsY + 4)
-    term.write("ESC - Back to main menu")
+    term.write("Click buttons above or use keyboard shortcuts")
 end
 
 function radio_ui.drawHostControls(state, radioState)
     local controlsY = state.height - 6
     
-    term.setTextColor(config.ui.colors.text_disabled)
+    -- Add songs button
+    term.setBackgroundColor(config.ui.colors.button)
+    term.setTextColor(config.ui.colors.text_primary)
     term.setCursorPos(3, controlsY)
-    term.write("Controls:")
+    local addText = " Add Songs "
+    term.write(addText)
+    radioState.add_button = {
+        x1 = 3,
+        y1 = controlsY,
+        x2 = 3 + #addText - 1,
+        y2 = controlsY
+    }
     
-    term.setCursorPos(3, controlsY + 1)
-    term.write("A - Add songs to playlist")
-    
+    -- Play/Stop button (only if playlist has songs)
     if #radioState.playlist > 0 then
-        if radioState.is_playing then
-            term.setCursorPos(3, controlsY + 2)
-            term.write("SPACE - Stop broadcast")
-        else
-            term.setCursorPos(3, controlsY + 2)
-            term.write("SPACE - Start broadcast")
-        end
+        term.setBackgroundColor(config.ui.colors.button)
+        term.setTextColor(config.ui.colors.text_primary)
+        term.setCursorPos(16, controlsY)
         
-        term.setCursorPos(3, controlsY + 3)
-        term.write("N - Next track")
+        local playStopText
+        if radioState.is_playing then
+            playStopText = " Stop Broadcast "
+        else
+            playStopText = " Start Broadcast "
+        end
+        term.write(playStopText)
+        radioState.play_stop_button = {
+            x1 = 16,
+            y1 = controlsY,
+            x2 = 16 + #playStopText - 1,
+            y2 = controlsY
+        }
+        
+        -- Next track button
+        term.setBackgroundColor(config.ui.colors.button)
+        term.setTextColor(config.ui.colors.text_primary)
+        term.setCursorPos(35, controlsY)
+        local nextText = " Next Track "
+        term.write(nextText)
+        radioState.next_button = {
+            x1 = 35,
+            y1 = controlsY,
+            x2 = 35 + #nextText - 1,
+            y2 = controlsY
+        }
     end
     
+    -- Back button
+    term.setBackgroundColor(config.ui.colors.button)
+    term.setTextColor(config.ui.colors.text_primary)
+    term.setCursorPos(3, controlsY + 2)
+    local backText = " Stop Station & Back to Menu "
+    term.write(backText)
+    radioState.back_button = {
+        x1 = 3,
+        y1 = controlsY + 2,
+        x2 = 3 + #backText - 1,
+        y2 = controlsY + 2
+    }
+    
+    term.setBackgroundColor(config.ui.colors.background)
+    term.setTextColor(config.ui.colors.text_disabled)
     term.setCursorPos(3, controlsY + 4)
-    term.write("ESC - Stop station & return to menu")
+    term.write("Click buttons above or use keyboard shortcuts")
 end
 
 function radio_ui.drawHeader(state)
