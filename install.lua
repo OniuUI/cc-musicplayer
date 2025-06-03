@@ -125,6 +125,7 @@ sleep(0.5)
 -- Files to download
 local files = {
 	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
+	{name = "uninstall.lua", url = baseUri .. "uninstall.lua", path = "uninstall.lua"},
 	{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
 	{name = "state.lua", url = baseUri .. "musicplayer/state.lua", path = "musicplayer/state.lua"},
 	{name = "ui.lua", url = baseUri .. "musicplayer/ui.lua", path = "musicplayer/ui.lua"},
@@ -279,6 +280,7 @@ colorPrint("• Use the Search tab to find YouTube videos", colors.lightGray)
 colorPrint("• Click volume bar to adjust sound", colors.lightGray)
 colorPrint("• Try pasting YouTube playlist links", colors.lightGray)
 colorPrint("• Use Loop button to repeat songs/queue", colors.lightGray)
+colorPrint("• Type 'uninstall' to remove the system", colors.lightGray)
 
 sleep(0.5)
 
