@@ -5,6 +5,22 @@ term.clear()
 print("Installing iPod-style Music Player...")
 print("Setting up modular structure...")
 
+-- Test HTTP connectivity first
+print("Testing HTTP connectivity...")
+local testResponse = http.get("https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/version.txt")
+if testResponse then
+	local testContent = testResponse.readAll()
+	testResponse.close()
+	print("✓ HTTP connectivity OK (version: " .. testContent .. ")")
+else
+	print("ERROR: Cannot connect to GitHub")
+	print("This might be due to:")
+	print("• Internet connection issues")
+	print("• ComputerCraft HTTP whitelist restrictions")
+	print("• Server configuration blocking requests")
+	return
+end
+
 -- Create musicplayer directory
 if not fs.exists("musicplayer") then
 	fs.makeDir("musicplayer")
@@ -26,17 +42,26 @@ local files = {
 -- Download each file
 for _, file in ipairs(files) do
 	print("Downloading " .. file.name .. "...")
+	print("URL: " .. file.url)
 	local response = http.get(file.url)
 	
 	if response then
-		local fileInstance = fs.open(file.path, "w")
-		fileInstance.write(response.readAll())
-		fileInstance.close()
-		response.close()
-		print("✓ Downloaded " .. file.name)
+		local content = response.readAll()
+		if content and content ~= "" then
+			local fileInstance = fs.open(file.path, "w")
+			fileInstance.write(content)
+			fileInstance.close()
+			response.close()
+			print("✓ Downloaded " .. file.name .. " (" .. string.len(content) .. " bytes)")
+		else
+			print("ERROR: " .. file.name .. " downloaded but content is empty")
+			if response then response.close() end
+			return
+		end
 	else
 		print("ERROR: Failed to download " .. file.name)
-		print("Please check your internet connection and try again.")
+		print("HTTP request returned nil - check URL and internet connection")
+		print("URL was: " .. file.url)
 		return
 	end
 end
