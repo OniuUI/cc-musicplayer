@@ -68,6 +68,9 @@ local function confirmUninstall()
     -- List files that will be removed
     local filesToRemove = {
         "startup.lua",
+        "uninstall.lua",
+        "install.lua",
+        "download",
         "version.txt",
         "musicplayer/ (entire folder)",
         "  ├── config.lua",
@@ -97,6 +100,8 @@ end
 local function removeFiles()
     local filesToRemove = {
         {path = "startup.lua", name = "Main startup file"},
+        {path = "install.lua", name = "Installer script"},
+        {path = "download", name = "Download script"},
         {path = "version.txt", name = "Version file"},
         {path = "musicplayer/config.lua", name = "Configuration module"},
         {path = "musicplayer/state.lua", name = "State management module"},
@@ -111,7 +116,7 @@ local function removeFiles()
     }
     
     local removedCount = 0
-    local totalFiles = #filesToRemove + 1 -- +1 for the folder itself
+    local totalFiles = #filesToRemove + 2 -- +1 for the folder itself, +1 for uninstall.lua (self-delete)
     
     colorPrint("Removing files...", colors.cyan)
     sleep(0.5)
@@ -144,6 +149,18 @@ local function removeFiles()
         colorPrint("✗ Not found", colors.yellow)
     end
     
+    -- Remove the uninstaller itself (last step)
+    term.setTextColor(colors.white)
+    term.write("Removing uninstaller... ")
+    
+    if fs.exists("uninstall.lua") then
+        -- Schedule self-deletion after the script finishes
+        colorPrint("✓ Will be removed", colors.lime)
+        removedCount = removedCount + 1
+    else
+        colorPrint("✗ Not found", colors.yellow)
+    end
+    
     return removedCount, totalFiles
 end
 
@@ -155,7 +172,7 @@ local function main()
     colorPrint("", colors.white)
     
     -- Check if any files exist
-    local hasFiles = fs.exists("startup.lua") or fs.exists("musicplayer") or fs.exists("version.txt")
+    local hasFiles = fs.exists("startup.lua") or fs.exists("musicplayer") or fs.exists("version.txt") or fs.exists("install.lua") or fs.exists("download")
     
     if not hasFiles then
         colorPrint("No Bognesferga Radio files found to remove.", colors.yellow)
@@ -218,6 +235,11 @@ local function main()
     term.setTextColor(colors.white)
     print()
     print()
+    
+    -- Self-delete the uninstaller as the final step
+    if fs.exists("uninstall.lua") then
+        fs.delete("uninstall.lua")
+    end
 end
 
 -- Run the uninstaller
