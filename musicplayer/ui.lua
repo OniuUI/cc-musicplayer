@@ -266,23 +266,30 @@ function ui.drawSearch(state)
     term.write(state.last_search or "Type here to search...")
 
     -- Search results with better formatting
-    if state.search_results ~= nil then
+    if state.search_results ~= nil and type(state.search_results) == "table" and #state.search_results > 0 then
         term.setBackgroundColor(config.ui.colors.background)
         term.setTextColor(config.ui.colors.text_accent)
         term.setCursorPos(3, 8)
-        term.write("Results:")
+        term.write("Results (" .. #state.search_results .. "):")
         
         local maxResults = math.min(#state.search_results, (state.height - 12) / 2)
         for i = 1, maxResults do
-            -- Result number and title
-            term.setTextColor(config.ui.colors.text_primary)
-            term.setCursorPos(3, 9 + (i - 1) * 2)
-            term.write(i .. ". " .. state.search_results[i].name)
-            
-            -- Artist
-            term.setTextColor(config.ui.colors.text_secondary)
-            term.setCursorPos(6, 10 + (i - 1) * 2)
-            term.write(state.search_results[i].artist)
+            -- Ensure we have valid result data
+            if state.search_results[i] and state.search_results[i].name then
+                -- Result number and title
+                term.setBackgroundColor(config.ui.colors.background)
+                term.setTextColor(config.ui.colors.text_primary)
+                term.setCursorPos(3, 9 + (i - 1) * 2)
+                term.clearLine()
+                term.write(i .. ". " .. state.search_results[i].name)
+                
+                -- Artist
+                term.setBackgroundColor(config.ui.colors.background)
+                term.setTextColor(config.ui.colors.text_secondary)
+                term.setCursorPos(6, 10 + (i - 1) * 2)
+                term.clearLine()
+                term.write(state.search_results[i].artist or "Unknown Artist")
+            end
         end
     else
         term.setCursorPos(3, 8)
@@ -300,8 +307,8 @@ function ui.drawSearch(state)
     end
     
     -- Back to Menu button
-    term.setTextColor(config.ui.colors.text_primary)
     term.setBackgroundColor(config.ui.colors.button)
+    term.setTextColor(config.ui.colors.text_primary)
     term.setCursorPos(3, state.height - 3)
     term.write(" BACK TO MENU ")
 

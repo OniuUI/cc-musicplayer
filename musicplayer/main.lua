@@ -38,6 +38,8 @@ function main.handleSearchInput(state)
 
             network.performSearch(state, input)
             state.waiting_for_input = false
+            -- Add a small delay to ensure the search request is sent
+            sleep(0.1)
             os.queueEvent("redraw_screen")
         end,
         function()

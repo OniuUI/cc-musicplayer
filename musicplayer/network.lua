@@ -43,9 +43,28 @@ function network.handleHttpFailure(state)
 end
 
 function network.handleSearchResponse(state, handle)
-    state.search_results = textutils.unserialiseJSON(handle.readAll())
+    local responseText = handle.readAll()
     handle.close()
-    os.queueEvent("redraw_screen")
+    
+    -- Try to parse the JSON response
+    local success, results = pcall(textutils.unserialiseJSON, responseText)
+    if success and results then
+        state.search_results = results
+        -- Clear any search error state
+        state.search_error = false
+        -- Ensure we're not in waiting_for_input state
+        state.waiting_for_input = false
+        -- Add a small delay to ensure state is properly set
+        sleep(0.05)
+        -- Force a redraw
+        os.queueEvent("redraw_screen")
+    else
+        -- Handle JSON parsing error
+        state.search_error = true
+        state.search_results = nil
+        state.waiting_for_input = false
+        os.queueEvent("redraw_screen")
+    end
 end
 
 function network.handleDownloadResponse(state, handle)
