@@ -42,7 +42,7 @@ else
 	speaker.playNote(instr, 3, 16)
 	sleep(0.01)
 
-	local updateUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/main/version.txt"
+	local updateUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/version.txt"
 
 	local updateResponse = http.get(updateUri)
 

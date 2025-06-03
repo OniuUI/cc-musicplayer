@@ -1,4 +1,4 @@
-local baseUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/main/"
+local baseUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/"
 local files = { "help", "play", "save", "savetodevice", "startup", "menu", "setvolume" }
 
 term.clear()
@@ -20,7 +20,7 @@ for _, file in pairs(files) do
 	end
 end
 
-local updateUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/main/version.txt"
+local updateUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/version.txt"
 
 local updateResponse = http.get(updateUri)
 
