@@ -6,8 +6,8 @@ local input = {}
 function input.handleMouseClick(state, button, x, y)
     if button ~= 1 then return end
 
-    -- Tab switching
-    if not state.in_search_result and y == 1 then
+    -- Tab switching (now on line 2 due to header)
+    if not state.in_search_result and y == 2 then
         if x < state.width / 2 then
             state.tab = 1
         else
@@ -28,18 +28,18 @@ function input.handleMouseClick(state, button, x, y)
 end
 
 function input.handleSearchTab(state, x, y)
-    -- Search box click
-    if y >= 3 and y <= 5 and x >= 1 and x <= state.width - 1 then
-        paintutils.drawFilledBox(2, 3, state.width - 1, 5, config.ui.colors.button_active)
+    -- Search box click (adjusted for new layout)
+    if y >= 5 and y <= 6 and x >= 3 and x <= state.width - 2 then
+        paintutils.drawFilledBox(3, 5, state.width - 2, 6, config.ui.colors.button_active)
         term.setBackgroundColor(config.ui.colors.button_active)
         state.waiting_for_input = true
         return false
     end
 
-    -- Search result click
+    -- Search result click (adjusted for new layout)
     if state.search_results then
         for i = 1, #state.search_results do
-            if y == 7 + (i - 1) * 2 or y == 8 + (i - 1) * 2 then
+            if y == 9 + (i - 1) * 2 or y == 10 + (i - 1) * 2 then
                 input.highlightSearchResult(state, i)
                 sleep(0.2)
                 state.in_search_result = true
@@ -55,11 +55,11 @@ end
 function input.highlightSearchResult(state, index)
     term.setBackgroundColor(config.ui.colors.button_active)
     term.setTextColor(config.ui.colors.background)
-    term.setCursorPos(2, 7 + (index - 1) * 2)
+    term.setCursorPos(3, 9 + (index - 1) * 2)
     term.clearLine()
-    term.write(state.search_results[index].name)
+    term.write(index .. ". " .. state.search_results[index].name)
     term.setTextColor(config.ui.colors.text_disabled)
-    term.setCursorPos(2, 8 + (index - 1) * 2)
+    term.setCursorPos(6, 10 + (index - 1) * 2)
     term.clearLine()
     term.write(state.search_results[index].artist)
 end
@@ -68,26 +68,26 @@ function input.handleSearchResultMenu(state, x, y)
     term.setBackgroundColor(config.ui.colors.button_active)
     term.setTextColor(config.ui.colors.background)
 
-    if y == 6 then
-        input.highlightMenuOption(2, 6, "Play now")
+    if y == 8 then
+        input.highlightMenuOption(3, 8, "Play now")
         sleep(0.2)
         state.in_search_result = false
         input.playNow(state)
         return true
-    elseif y == 8 then
-        input.highlightMenuOption(2, 8, "Play next")
+    elseif y == 10 then
+        input.highlightMenuOption(3, 10, "Play next")
         sleep(0.2)
         state.in_search_result = false
         input.playNext(state)
         return true
-    elseif y == 10 then
-        input.highlightMenuOption(2, 10, "Add to queue")
+    elseif y == 12 then
+        input.highlightMenuOption(3, 12, "Add to queue")
         sleep(0.2)
         state.in_search_result = false
         input.addToQueue(state)
         return true
-    elseif y == 13 then
-        input.highlightMenuOption(2, 13, "Cancel")
+    elseif y == 15 then
+        input.highlightMenuOption(3, 15, "Cancel")
         sleep(0.2)
         state.in_search_result = false
         return true
@@ -99,26 +99,26 @@ end
 function input.highlightMenuOption(x, y, text)
     term.setCursorPos(x, y)
     term.clearLine()
-    term.write(text)
+    term.write(" " .. text .. " ")
 end
 
 function input.handleNowPlayingTab(state, x, y)
-    if y == 6 then
-        -- Play/stop button
-        if x >= 2 and x < 8 then
+    if y == 8 then
+        -- Play/stop button (PLAY/STOP at position 3-8)
+        if x >= 3 and x < 9 then
             return input.handlePlayStopButton(state)
         end
-        -- Skip button
-        if x >= 9 and x < 15 then
+        -- Skip button (SKIP at position 11-16)
+        if x >= 11 and x < 17 then
             return input.handleSkipButton(state)
         end
-        -- Loop button
-        if x >= 16 and x < 28 then
+        -- Loop button (LOOP buttons at position 19-28)
+        if x >= 19 and x < 29 then
             return input.handleLoopButton(state)
         end
-    elseif y == 8 then
-        -- Volume slider
-        if x >= 1 and x < 27 then
+    elseif y == 11 then
+        -- Volume slider (adjusted for new layout)
+        if x >= 3 and x <= 25 then
             input.handleVolumeSlider(state, x)
             return true
         end
@@ -129,7 +129,7 @@ end
 
 function input.handlePlayStopButton(state)
     if state.playing or state.now_playing ~= nil or #state.queue > 0 then
-        input.highlightButton(2, 6, state.playing and " Stop " or " Play ")
+        input.highlightButton(3, 8, state.playing and " Stop " or " Play ")
         sleep(0.2)
     end
 
@@ -162,7 +162,7 @@ end
 
 function input.handleSkipButton(state)
     if state.now_playing ~= nil or #state.queue > 0 then
-        input.highlightButton(9, 6, " Skip ")
+        input.highlightButton(11, 8, " Skip ")
         sleep(0.2)
 
         state.is_error = false
@@ -205,7 +205,13 @@ function input.handleLoopButton(state)
 end
 
 function input.handleVolumeSlider(state, x)
-    state.volume = (x - 1) / 24 * config.max_volume
+    -- Adjust volume calculation for new slider position (starts at x=3, width=22)
+    local sliderStart = 3
+    local sliderWidth = 22
+    local relativeX = x - sliderStart
+    state.volume = (relativeX / sliderWidth) * config.max_volume
+    if state.volume < 0 then state.volume = 0 end
+    if state.volume > config.max_volume then state.volume = config.max_volume end
 end
 
 function input.highlightButton(x, y, text)
@@ -262,7 +268,8 @@ end
 
 function input.handleMouseDrag(state, button, x, y)
     if button == 1 and state.tab == 1 and not state.in_search_result then
-        if y >= 7 and y <= 9 and x >= 1 and x < 27 then
+        -- Volume slider drag (adjusted coordinates)
+        if y == 11 and x >= 3 and x <= 25 then
             input.handleVolumeSlider(state, x)
             return true
         end

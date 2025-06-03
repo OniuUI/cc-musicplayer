@@ -19,8 +19,7 @@ A modern, feature-rich radio player for ComputerCraft/CC Tweaked that brings You
 Run this command on any ComputerCraft computer:
 
 ```lua
-shell.run("wget", "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/install.lua", "install")
-shell.run("install")
+pastebin get YzZzdRrm download
 ```
 
 ## Usage

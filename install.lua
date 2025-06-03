@@ -216,20 +216,83 @@ sleep(0.5)
 
 -- Final message with animation
 local _, currentY = term.getCursorPos()
-term.setCursorPos(1, currentY + 1)
-term.setTextColor(colors.white)
-term.write("Run ")
-term.setTextColor(colors.yellow)
-term.write("'startup'")
-term.setTextColor(colors.white)
-term.write(" to begin using your new radio player!")
+term.setCursorPos(1, currentY + 2)
 
--- Blinking cursor effect
-for i = 1, 3 do
-	sleep(0.5)
-	term.setTextColor(colors.lime)
-	term.write(" ●")
-	sleep(0.5)
+-- Startup instructions section with banner
+term.setBackgroundColor(colors.green)
+term.setTextColor(colors.white)
+local w = term.getSize()
+local instructionBanner = "  HOW TO START YOUR RADIO  "
+local bannerX = math.floor((w - #instructionBanner) / 2) + 1
+term.setCursorPos(bannerX, currentY + 2)
+term.clearLine()
+animateText(instructionBanner, colors.white, 0.03)
+
+term.setBackgroundColor(colors.black)
+term.setCursorPos(1, currentY + 4)
+
+-- Step by step instructions with colors
+colorPrint("To start your Bognesferga Radio:", colors.cyan)
+sleep(0.3)
+
+local steps = {
+	{text = "1. Type: ", color = colors.white, code = "startup", codeColor = colors.yellow},
+	{text = "2. Press Enter to launch", color = colors.white},
+	{text = "3. Connect speakers if needed", color = colors.lightGray},
+	{text = "4. Search for music on YouTube", color = colors.lightGray},
+	{text = "5. Enjoy your music!", color = colors.lime}
+}
+
+for i, step in ipairs(steps) do
+	sleep(0.2)
+	term.setTextColor(step.color)
+	term.write(step.text)
+	if step.code then
+		term.setTextColor(step.codeColor)
+		term.write(step.code)
+	end
+	print()
+end
+
+sleep(0.5)
+
+-- Quick start box
+local _, currentY = term.getCursorPos()
+term.setCursorPos(1, currentY + 1)
+term.setBackgroundColor(colors.blue)
+term.setTextColor(colors.white)
+term.clearLine()
+local quickStart = "  QUICK START: Just type 'startup' now!  "
+local quickX = math.floor((w - #quickStart) / 2) + 1
+term.setCursorPos(quickX, currentY + 1)
+animateText(quickStart, colors.white, 0.02)
+
+term.setBackgroundColor(colors.black)
+term.setCursorPos(1, currentY + 3)
+
+-- Additional tips
+colorPrint("Tips:", colors.yellow)
+colorPrint("• Use the Search tab to find YouTube videos", colors.lightGray)
+colorPrint("• Click volume bar to adjust sound", colors.lightGray)
+colorPrint("• Try pasting YouTube playlist links", colors.lightGray)
+colorPrint("• Use Loop button to repeat songs/queue", colors.lightGray)
+
+sleep(0.5)
+
+-- Final animated message
+local _, currentY = term.getCursorPos()
+term.setCursorPos(1, currentY + 2)
+term.setTextColor(colors.lime)
+term.write("Ready to rock! ")
+term.setTextColor(colors.yellow)
+term.write("Type 'startup' to begin!")
+
+-- Enhanced blinking effect
+for i = 1, 5 do
+	sleep(0.3)
+	term.setTextColor(colors.red)
+	term.write(" ♪")
+	sleep(0.3)
 	local x, y = term.getCursorPos()
 	term.setCursorPos(x - 1, y)
 	term.write(" ")
@@ -237,4 +300,5 @@ for i = 1, 3 do
 end
 
 term.setTextColor(colors.white)
+print()
 print()

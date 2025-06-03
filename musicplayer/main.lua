@@ -31,7 +31,7 @@ end
 function main.handleSearchInput(state)
     parallel.waitForAny(
         function()
-            term.setCursorPos(3, 4)
+            term.setCursorPos(4, 5)
             term.setBackgroundColor(config.ui.colors.button_active)
             term.setTextColor(config.ui.colors.background)
             local input = read()
@@ -43,7 +43,7 @@ function main.handleSearchInput(state)
         function()
             while state.waiting_for_input do
                 local event, button, x, y = os.pullEvent("mouse_click")
-                if y < 3 or y > 5 or x < 2 or x > state.width - 1 then
+                if y < 5 or y > 6 or x < 3 or x > state.width - 2 then
                     state.waiting_for_input = false
                     os.queueEvent("redraw_screen")
                     break

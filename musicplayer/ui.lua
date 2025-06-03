@@ -12,9 +12,47 @@ function ui.redrawScreen(state)
     term.setBackgroundColor(config.ui.colors.background)
     term.clear()
 
-    -- Draw the top tabs
+    -- Draw header banner
+    ui.drawHeader(state)
+    
+    -- Draw the tabs
+    ui.drawTabs(state)
+
+    if state.tab == 1 then
+        ui.drawNowPlaying(state)
+    elseif state.tab == 2 then
+        ui.drawSearch(state)
+    end
+    
+    -- Draw footer
+    ui.drawFooter(state)
+end
+
+function ui.drawHeader(state)
+    -- Header background
+    term.setBackgroundColor(config.ui.colors.header_bg)
     term.setCursorPos(1, 1)
-    term.setBackgroundColor(config.ui.colors.tab_inactive)
+    term.clearLine()
+    
+    -- Center the title
+    local title = config.branding.title
+    local titleX = math.floor((state.width - #title) / 2) + 1
+    term.setCursorPos(titleX, 1)
+    term.setTextColor(config.ui.colors.text_primary)
+    term.write(title)
+    
+    -- Decorative elements
+    term.setTextColor(config.ui.colors.text_accent)
+    term.setCursorPos(titleX - 2, 1)
+    term.write("♪ ")
+    term.setCursorPos(titleX + #title, 1)
+    term.write(" ♪")
+end
+
+function ui.drawTabs(state)
+    -- Tab background
+    term.setBackgroundColor(config.ui.colors.tab_bg)
+    term.setCursorPos(1, 2)
     term.clearLine()
     
     for i = 1, #config.ui.tabs do
@@ -27,75 +65,97 @@ function ui.redrawScreen(state)
         end
         
         local x = (math.floor((state.width / #config.ui.tabs) * (i - 0.5))) - math.ceil(#config.ui.tabs[i] / 2) + 1
-        term.setCursorPos(x, 1)
+        term.setCursorPos(x, 2)
         term.write(config.ui.tabs[i])
     end
+end
 
-    if state.tab == 1 then
-        ui.drawNowPlaying(state)
-    elseif state.tab == 2 then
-        ui.drawSearch(state)
+function ui.drawFooter(state)
+    -- Footer background
+    term.setBackgroundColor(config.ui.colors.footer_bg)
+    term.setCursorPos(1, state.height)
+    term.clearLine()
+    
+    -- Rainbow "Developed by Forty" text
+    local devText = config.branding.developer
+    local footerX = math.floor((state.width - #devText) / 2) + 1
+    term.setCursorPos(footerX, state.height)
+    
+    for i = 1, #devText do
+        local colorIndex = ((i - 1) % #config.branding.rainbow_colors) + 1
+        term.setTextColor(config.branding.rainbow_colors[colorIndex])
+        term.write(devText:sub(i, i))
     end
 end
 
 function ui.drawNowPlaying(state)
-    -- Song info
+    -- Song info section with enhanced styling
     if state.now_playing ~= nil then
         term.setBackgroundColor(config.ui.colors.background)
-        term.setTextColor(config.ui.colors.text_primary)
-        term.setCursorPos(2, 3)
-        term.write(state.now_playing.name)
+        
+        -- Song title with accent color
+        term.setTextColor(config.ui.colors.text_accent)
+        term.setCursorPos(3, 4)
+        term.write("♫ " .. state.now_playing.name)
+        
+        -- Artist with secondary color
         term.setTextColor(config.ui.colors.text_secondary)
-        term.setCursorPos(2, 4)
-        term.write(state.now_playing.artist)
+        term.setCursorPos(3, 5)
+        term.write("  " .. state.now_playing.artist)
     else
         term.setBackgroundColor(config.ui.colors.background)
-        term.setTextColor(config.ui.colors.text_secondary)
-        term.setCursorPos(2, 3)
-        term.write("Not playing")
+        term.setTextColor(config.ui.colors.text_disabled)
+        term.setCursorPos(3, 4)
+        term.write("♪ Not playing")
     end
 
-    -- Status messages
+    -- Status messages with enhanced colors
     if state.is_loading then
         term.setTextColor(config.ui.colors.loading)
         term.setBackgroundColor(config.ui.colors.background)
-        term.setCursorPos(2, 5)
-        term.write("Loading...")
+        term.setCursorPos(3, 6)
+        term.write("⟳ Loading...")
     elseif state.is_error then
         term.setTextColor(config.ui.colors.error)
         term.setBackgroundColor(config.ui.colors.background)
-        term.setCursorPos(2, 5)
-        term.write("Network error")
+        term.setCursorPos(3, 6)
+        term.write("✗ Network error")
+    elseif state.playing then
+        term.setTextColor(config.ui.colors.playing)
+        term.setBackgroundColor(config.ui.colors.background)
+        term.setCursorPos(3, 6)
+        term.write("▶ Playing")
     end
 
-    -- Control buttons
+    -- Control buttons with enhanced styling
     ui.drawControlButtons(state)
     
-    -- Volume slider
+    -- Volume slider with new design
     ui.drawVolumeSlider(state)
     
-    -- Queue
+    -- Queue with better formatting
     ui.drawQueue(state)
 end
 
 function ui.drawControlButtons(state)
-    term.setTextColor(config.ui.colors.text_primary)
-    term.setBackgroundColor(config.ui.colors.button)
-
-    -- Play/Stop button
+    local buttonY = 8
+    
+    -- Play/Stop button with enhanced colors
     if state.playing then
-        term.setCursorPos(2, 6)
-        term.write(" Stop ")
+        term.setTextColor(config.ui.colors.text_primary)
+        term.setBackgroundColor(config.ui.colors.error)
+        term.setCursorPos(3, buttonY)
+        term.write(" STOP ")
     else
         if state.now_playing ~= nil or #state.queue > 0 then
             term.setTextColor(config.ui.colors.text_primary)
-            term.setBackgroundColor(config.ui.colors.button)
+            term.setBackgroundColor(config.ui.colors.playing)
         else
             term.setTextColor(config.ui.colors.text_disabled)
             term.setBackgroundColor(config.ui.colors.button)
         end
-        term.setCursorPos(2, 6)
-        term.write(" Play ")
+        term.setCursorPos(3, buttonY)
+        term.write(" PLAY ")
     end
 
     -- Skip button
@@ -106,10 +166,10 @@ function ui.drawControlButtons(state)
         term.setTextColor(config.ui.colors.text_disabled)
         term.setBackgroundColor(config.ui.colors.button)
     end
-    term.setCursorPos(2 + 7, 6)
-    term.write(" Skip ")
+    term.setCursorPos(11, buttonY)
+    term.write(" SKIP ")
 
-    -- Loop button
+    -- Loop button with status indication
     if state.looping ~= 0 then
         term.setTextColor(config.ui.colors.background)
         term.setBackgroundColor(config.ui.colors.button_active)
@@ -117,83 +177,114 @@ function ui.drawControlButtons(state)
         term.setTextColor(config.ui.colors.text_primary)
         term.setBackgroundColor(config.ui.colors.button)
     end
-    term.setCursorPos(2 + 7 + 7, 6)
+    term.setCursorPos(19, buttonY)
     if state.looping == 0 then
-        term.write(" Loop Off ")
+        term.write(" LOOP OFF ")
     elseif state.looping == 1 then
-        term.write(" Loop Queue ")
+        term.write(" LOOP ALL ")
     else
-        term.write(" Loop Song ")
+        term.write(" LOOP ONE ")
     end
 end
 
 function ui.drawVolumeSlider(state)
-    term.setCursorPos(2, 8)
-    paintutils.drawBox(2, 8, 25, 8, config.ui.colors.button)
-    local width = math.floor(24 * (state.volume / config.max_volume) + 0.5) - 1
-    if width >= 0 then
-        paintutils.drawBox(2, 8, 2 + width, 8, config.ui.colors.button_active)
+    local sliderY = 10
+    local sliderX = 3
+    local sliderWidth = 22
+    
+    -- Volume label
+    term.setBackgroundColor(config.ui.colors.background)
+    term.setTextColor(config.ui.colors.text_accent)
+    term.setCursorPos(sliderX, sliderY)
+    term.write("Volume:")
+    
+    -- Slider background
+    term.setCursorPos(sliderX, sliderY + 1)
+    paintutils.drawBox(sliderX, sliderY + 1, sliderX + sliderWidth, sliderY + 1, config.ui.colors.volume_bg)
+    
+    -- Slider fill
+    local fillWidth = math.floor(sliderWidth * (state.volume / config.max_volume) + 0.5)
+    if fillWidth > 0 then
+        paintutils.drawBox(sliderX, sliderY + 1, sliderX + fillWidth - 1, sliderY + 1, config.ui.colors.volume_fill)
     end
     
+    -- Volume percentage
     local percentage = math.floor(100 * (state.volume / config.max_volume) + 0.5)
-    if state.volume < 0.6 then
-        term.setCursorPos(2 + width + 2, 8)
-        term.setBackgroundColor(config.ui.colors.button)
-        term.setTextColor(config.ui.colors.text_primary)
-    else
-        term.setCursorPos(2 + width - 3 - (state.volume == config.max_volume and 1 or 0), 8)
-        term.setBackgroundColor(config.ui.colors.button_active)
-        term.setTextColor(config.ui.colors.background)
-    end
+    term.setCursorPos(sliderX + sliderWidth + 2, sliderY + 1)
+    term.setBackgroundColor(config.ui.colors.background)
+    term.setTextColor(config.ui.colors.volume_text)
     term.write(percentage .. "%")
 end
 
 function ui.drawQueue(state)
     if #state.queue > 0 then
         term.setBackgroundColor(config.ui.colors.background)
-        for i = 1, #state.queue do
+        term.setTextColor(config.ui.colors.text_accent)
+        term.setCursorPos(3, 13)
+        term.write("Up Next:")
+        
+        local maxDisplay = math.min(#state.queue, state.height - 16)
+        for i = 1, maxDisplay do
             term.setTextColor(config.ui.colors.text_primary)
-            term.setCursorPos(2, 10 + (i - 1) * 2)
-            term.write(state.queue[i].name)
+            term.setCursorPos(3, 14 + (i - 1) * 2)
+            term.write((i) .. ". " .. state.queue[i].name)
             term.setTextColor(config.ui.colors.text_secondary)
-            term.setCursorPos(2, 11 + (i - 1) * 2)
+            term.setCursorPos(6, 15 + (i - 1) * 2)
             term.write(state.queue[i].artist)
+        end
+        
+        if #state.queue > maxDisplay then
+            term.setTextColor(config.ui.colors.text_disabled)
+            term.setCursorPos(3, 14 + maxDisplay * 2)
+            term.write("... and " .. (#state.queue - maxDisplay) .. " more")
         end
     end
 end
 
 function ui.drawSearch(state)
-    -- Search bar
-    paintutils.drawFilledBox(2, 3, state.width - 1, 5, config.ui.colors.search_box)
-    term.setBackgroundColor(config.ui.colors.search_box)
+    -- Search bar with enhanced styling
+    term.setBackgroundColor(config.ui.colors.background)
+    term.setTextColor(config.ui.colors.text_accent)
     term.setCursorPos(3, 4)
+    term.write("Search YouTube:")
+    
+    paintutils.drawFilledBox(3, 5, state.width - 2, 6, config.ui.colors.search_box)
+    term.setBackgroundColor(config.ui.colors.search_box)
+    term.setCursorPos(4, 5)
     term.setTextColor(config.ui.colors.background)
-    term.write(state.last_search or "Search...")
+    term.write(state.last_search or "Type here to search...")
 
-    -- Search results
+    -- Search results with better formatting
     if state.search_results ~= nil then
         term.setBackgroundColor(config.ui.colors.background)
-        for i = 1, #state.search_results do
+        term.setTextColor(config.ui.colors.text_accent)
+        term.setCursorPos(3, 8)
+        term.write("Results:")
+        
+        local maxResults = math.min(#state.search_results, (state.height - 12) / 2)
+        for i = 1, maxResults do
+            -- Result number and title
             term.setTextColor(config.ui.colors.text_primary)
-            term.setCursorPos(2, 7 + (i - 1) * 2)
-            term.write(state.search_results[i].name)
+            term.setCursorPos(3, 9 + (i - 1) * 2)
+            term.write(i .. ". " .. state.search_results[i].name)
+            
+            -- Artist
             term.setTextColor(config.ui.colors.text_secondary)
-            term.setCursorPos(2, 8 + (i - 1) * 2)
+            term.setCursorPos(6, 10 + (i - 1) * 2)
             term.write(state.search_results[i].artist)
         end
     else
-        term.setCursorPos(2, 7)
+        term.setCursorPos(3, 8)
         term.setBackgroundColor(config.ui.colors.background)
         if state.search_error then
             term.setTextColor(config.ui.colors.error)
-            term.write("Network error")
+            term.write("✗ Network error - check connection")
         elseif state.last_search_url ~= nil then
-            term.setTextColor(config.ui.colors.text_secondary)
-            term.write("Searching...")
+            term.setTextColor(config.ui.colors.loading)
+            term.write("⟳ Searching...")
         else
-            term.setCursorPos(1, 7)
             term.setTextColor(config.ui.colors.text_secondary)
-            print("Tip: You can paste YouTube video or playlist links.")
+            term.write("Tip: You can paste YouTube video or playlist links")
         end
     end
 
@@ -206,23 +297,30 @@ end
 function ui.drawSearchResultMenu(state)
     term.setBackgroundColor(config.ui.colors.background)
     term.clear()
-    term.setCursorPos(2, 2)
-    term.setTextColor(config.ui.colors.text_primary)
-    term.write(state.search_results[state.clicked_result].name)
-    term.setCursorPos(2, 3)
+    
+    -- Redraw header and footer for consistency
+    ui.drawHeader(state)
+    ui.drawFooter(state)
+    
+    -- Song info
+    term.setCursorPos(3, 4)
+    term.setTextColor(config.ui.colors.text_accent)
+    term.write("♫ " .. state.search_results[state.clicked_result].name)
+    term.setCursorPos(3, 5)
     term.setTextColor(config.ui.colors.text_secondary)
-    term.write(state.search_results[state.clicked_result].artist)
+    term.write("  " .. state.search_results[state.clicked_result].artist)
 
-    term.setBackgroundColor(config.ui.colors.button)
-    term.setTextColor(config.ui.colors.text_primary)
-
+    -- Action buttons with enhanced styling
     local options = {"Play now", "Play next", "Add to queue", "Cancel"}
-    local positions = {6, 8, 10, 13}
+    local positions = {8, 10, 12, 15}
+    local colors = {config.ui.colors.playing, config.ui.colors.button_active, config.ui.colors.button, config.ui.colors.error}
     
     for i, option in ipairs(options) do
-        term.setCursorPos(2, positions[i])
+        term.setBackgroundColor(colors[i])
+        term.setTextColor(config.ui.colors.text_primary)
+        term.setCursorPos(3, positions[i])
         term.clearLine()
-        term.write(option)
+        term.write(" " .. option .. " ")
     end
 end
 
