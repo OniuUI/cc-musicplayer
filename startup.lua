@@ -30,23 +30,33 @@ local function getStationName(appState)
     radio_ui.drawStationNameInput(appState)
     
     local stationName = ""
+    term.setCursorPos(4, 8) -- Position cursor in the input box
+    term.setCursorBlink(true)
+    
     while true do
         local event, key = os.pullEvent()
         
         if event == "key" then
             if key == keys.enter and #stationName > 0 then
+                term.setCursorBlink(false)
                 return stationName
             elseif key == keys.escape then
+                term.setCursorBlink(false)
                 return nil
             elseif key == keys.backspace and #stationName > 0 then
                 stationName = stationName:sub(1, -2)
-                radio_ui.drawStationNameInput(appState)
-                term.setCursorPos(4 + #stationName, 8)
-                term.write(" ")
-                term.setCursorPos(4 + #stationName, 8)
+                -- Clear the input box and redraw
+                term.setBackgroundColor(config.ui.colors.search_box)
+                term.setCursorPos(4, 8)
+                term.write(string.rep(" ", appState.width - 6)) -- Clear the line
+                term.setCursorPos(4, 8)
+                term.setTextColor(config.ui.colors.background)
+                term.write(stationName)
             end
         elseif event == "char" and #stationName < 30 then
             stationName = stationName .. key
+            term.setBackgroundColor(config.ui.colors.search_box)
+            term.setTextColor(config.ui.colors.background)
             term.write(key)
         end
     end
@@ -134,8 +144,11 @@ local function runYouTubePlayer(appState)
         function() network.loop(appState.musicState) end,
         function()
             while appState.mode == "youtube" do
-                local event, key = os.pullEvent("key")
-                if key == keys.escape then
+                local event, key = os.pullEvent()
+                if event == "key" and key == keys.escape then
+                    appState.mode = "menu"
+                    break
+                elseif event == "return_to_menu" or (appState.musicState and appState.musicState.return_to_menu) then
                     appState.mode = "menu"
                     break
                 end

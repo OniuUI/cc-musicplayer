@@ -35,6 +35,11 @@ function input.handleSearchTab(state, x, y)
         state.waiting_for_input = true
         return false
     end
+    
+    -- Back to Menu button click
+    if y == state.height - 3 and x >= 3 and x < 16 then
+        return input.handleBackButton(state)
+    end
 
     -- Search result click (adjusted for new layout)
     if state.search_results then
@@ -115,6 +120,10 @@ function input.handleNowPlayingTab(state, x, y)
         -- Loop button (LOOP buttons at position 19-28)
         if x >= 19 and x < 29 then
             return input.handleLoopButton(state)
+        end
+        -- Back to Menu button (BACK TO MENU at position 31-43)
+        if x >= 31 and x < 44 then
+            return input.handleBackButton(state)
         end
     elseif y == 11 then
         -- Volume slider (adjusted for new layout)
@@ -204,6 +213,28 @@ function input.handleLoopButton(state)
     return true
 end
 
+function input.handleBackButton(state)
+    input.highlightButton(31, 8, " BACK TO MENU ")
+    sleep(0.2)
+    
+    -- Stop any playing audio
+    if state.playing then
+        for _, speaker in ipairs(state.speakers) do
+            speaker.stop()
+            os.queueEvent("playback_stopped")
+        end
+        state.playing = false
+        state.playing_id = nil
+        state.is_loading = false
+        state.is_error = false
+    end
+    
+    -- Signal to return to menu
+    state.return_to_menu = true
+    os.queueEvent("return_to_menu")
+    return true
+end
+
 function input.handleVolumeSlider(state, x)
     -- Adjust volume calculation for new slider position (starts at x=3, width=22)
     local sliderStart = 3
@@ -275,6 +306,24 @@ function input.handleMouseDrag(state, button, x, y)
         end
     end
     return false
+end
+
+-- Wrapper function for compatibility with radio playlist functionality
+function input.handleClick(state, x, y)
+    return input.handleMouseClick(state, 1, x, y)
+end
+
+-- Function to handle search input for radio playlist functionality
+function input.handleSearchInput(state)
+    term.setCursorPos(4, 5)
+    term.setBackgroundColor(config.ui.colors.button_active)
+    term.setTextColor(config.ui.colors.background)
+    local searchInput = read()
+    
+    local network = require("musicplayer.network")
+    network.performSearch(state, searchInput)
+    state.waiting_for_input = false
+    return "search_complete"
 end
 
 return input 

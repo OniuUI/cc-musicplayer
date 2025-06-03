@@ -190,6 +190,12 @@ function ui.drawControlButtons(state)
     else
         term.write(" LOOP ONE ")
     end
+    
+    -- Back to Menu button
+    term.setTextColor(config.ui.colors.text_primary)
+    term.setBackgroundColor(config.ui.colors.button)
+    term.setCursorPos(31, buttonY)
+    term.write(" BACK TO MENU ")
 end
 
 function ui.drawVolumeSlider(state)
@@ -292,6 +298,12 @@ function ui.drawSearch(state)
             term.write("Tip: You can paste YouTube video or playlist links")
         end
     end
+    
+    -- Back to Menu button
+    term.setTextColor(config.ui.colors.text_primary)
+    term.setBackgroundColor(config.ui.colors.button)
+    term.setCursorPos(3, state.height - 3)
+    term.write(" BACK TO MENU ")
 
     -- Fullscreen song options
     if state.in_search_result then
