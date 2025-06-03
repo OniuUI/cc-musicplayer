@@ -61,14 +61,21 @@ function input_handlers.addSongsToPlaylist(appState, logger, telemetry)
         telemetry.logPerformanceEvent("playlist_search_loop")
         appState.modules.ui.redrawScreen(searchState)
         
-        local event, key, x, y = os.pullEvent()
+        local event, param1, param2, param3 = os.pullEvent()
         
         if event == "key" then
-            if key == keys.escape then
+            if param1 == keys.escape then
                 logger.debug("Radio", "YouTube search cancelled")
                 break
             end
-        elseif event == "mouse_click" then
+        elseif event == "mouse_click" or event == "monitor_touch" then
+            local button, x, y
+            if event == "mouse_click" then
+                button, x, y = param1, param2, param3
+            else -- monitor_touch
+                button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+            end
+            
             local result = appState.modules.input.handleClick(searchState, x, y)
             if result == "back" then
                 logger.debug("Radio", "Back from YouTube search")

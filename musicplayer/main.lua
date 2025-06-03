@@ -44,19 +44,32 @@ function main.handleSearchInput(state)
         end,
         function()
             while state.waiting_for_input do
-                local event, button, x, y = os.pullEvent("mouse_click")
+                local event, param1, param2, param3 = os.pullEvent()
+                
+                local button, x, y
+                if event == "mouse_click" then
+                    button, x, y = param1, param2, param3
+                elseif event == "monitor_touch" then
+                    button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+                else
+                    -- Not a click event, continue waiting
+                    goto continue
+                end
+                
                 if y < 5 or y > 6 or x < 3 or x > state.width - 2 then
                     state.waiting_for_input = false
                     os.queueEvent("redraw_screen")
                     break
                 end
+                
+                ::continue::
             end
         end
     )
 end
 
 function main.handleMouseClick(state)
-    local event, button, x, y = os.pullEvent("mouse_click")
+    local button, x, y = input.waitForClickEvent()
     
     if input.handleMouseClick(state, button, x, y) then
         ui.redrawScreen(state)

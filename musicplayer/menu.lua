@@ -124,10 +124,10 @@ end
 
 function menu.handleInput(menuState)
     while true do
-        local event, button, x, y = os.pullEvent()
+        local event, param1, param2, param3 = os.pullEvent()
         
         if event == "key" then
-            local key = button
+            local key = param1
             if key == keys.up then
                 menuState.selected_option = menuState.selected_option - 1
                 if menuState.selected_option < 1 then
@@ -143,7 +143,14 @@ function menu.handleInput(menuState)
             elseif key == keys.enter then
                 return menuState.options[menuState.selected_option].name
             end
-        elseif event == "mouse_click" then
+        elseif event == "mouse_click" or event == "monitor_touch" then
+            local button, x, y
+            if event == "mouse_click" then
+                button, x, y = param1, param2, param3
+            else -- monitor_touch
+                button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+            end
+            
             -- Check if click is on any menu option
             for i, option in ipairs(menuState.options) do
                 if option.click_area and 

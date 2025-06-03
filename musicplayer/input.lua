@@ -3,6 +3,21 @@ local config = require("musicplayer.config")
 
 local input = {}
 
+-- Utility function to wait for either mouse_click or monitor_touch events
+function input.waitForClickEvent()
+    while true do
+        local event, param1, param2, param3 = os.pullEvent()
+        
+        if event == "mouse_click" then
+            -- mouse_click: button, x, y
+            return param1, param2, param3
+        elseif event == "monitor_touch" then
+            -- monitor_touch: side, x, y (we ignore the side parameter)
+            return 1, param2, param3  -- Always treat monitor touches as left clicks
+        end
+    end
+end
+
 function input.handleMouseClick(state, button, x, y)
     if button ~= 1 then return end
 

@@ -149,11 +149,11 @@ function mode_handlers.runRadioClient(appState, logger, telemetry)
         end
         
         -- Handle input with logging
-        local event, button, x, y = os.pullEvent()
+        local event, param1, param2, param3 = os.pullEvent()
         telemetry.logPerformanceEvent("radio_input")
         
         if event == "key" then
-            local key = button
+            local key = param1
             if key == keys.escape then
                 logger.info("Radio", "Radio client shutting down")
                 if appState.modules.radio then
@@ -184,8 +184,15 @@ function mode_handlers.runRadioClient(appState, logger, telemetry)
                 logger.info("Radio", "Disconnecting from station")
                 appState.modules.radio.disconnectFromStation(appState.radioState)
             end
-        elseif event == "mouse_click" then
-            logger.debug("Radio", "Mouse click at " .. x .. "," .. y)
+        elseif event == "mouse_click" or event == "monitor_touch" then
+            local button, x, y
+            if event == "mouse_click" then
+                button, x, y = param1, param2, param3
+            else -- monitor_touch
+                button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+            end
+            
+            logger.debug("Radio", "Click at " .. x .. "," .. y)
             -- Check for button clicks
             if appState.radioState.scan_button and 
                x >= appState.radioState.scan_button.x1 and x <= appState.radioState.scan_button.x2 and
@@ -251,11 +258,11 @@ function mode_handlers.runRadioHost(appState, logger, telemetry)
         end
         
         -- Handle input with logging
-        local event, button, x, y = os.pullEvent()
+        local event, param1, param2, param3 = os.pullEvent()
         telemetry.logPerformanceEvent("radio_host_input")
         
         if event == "key" then
-            local key = button
+            local key = param1
             if key == keys.escape then
                 logger.info("Radio", "Radio host shutting down")
                 if appState.modules.radio then
@@ -280,8 +287,15 @@ function mode_handlers.runRadioHost(appState, logger, telemetry)
                 logger.info("Radio", "Next track shortcut pressed")
                 appState.modules.radio.hostNextTrack(appState.radioState)
             end
-        elseif event == "mouse_click" then
-            logger.debug("Radio", "Mouse click at " .. x .. "," .. y)
+        elseif event == "mouse_click" or event == "monitor_touch" then
+            local button, x, y
+            if event == "mouse_click" then
+                button, x, y = param1, param2, param3
+            else -- monitor_touch
+                button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+            end
+            
+            logger.debug("Radio", "Click at " .. x .. "," .. y)
             -- Check for button clicks
             if appState.radioState.add_button and 
                x >= appState.radioState.add_button.x1 and x <= appState.radioState.add_button.x2 and

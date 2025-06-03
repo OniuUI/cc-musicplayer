@@ -271,6 +271,19 @@ function telemetry.emergency(module, message)
     end
 end
 
+-- Check if currently running on a monitor
+function telemetry.isRunningOnMonitor()
+    return telemetry.monitors.appMonitor ~= nil and term.current() == telemetry.monitors.appMonitor.peripheral
+end
+
+-- Get the current monitor side if running on a monitor
+function telemetry.getCurrentMonitorSide()
+    if telemetry.isRunningOnMonitor() then
+        return telemetry.monitors.appMonitor.side
+    end
+    return nil
+end
+
 -- Cleanup telemetry system
 function telemetry.cleanup()
     logger.info("Telemetry", "Telemetry system shutting down")
