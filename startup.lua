@@ -25,66 +25,6 @@ local function init()
     }
 end
 
--- Main menu loop
-local function runMainMenu(appState)
-    while appState.mode == "menu" do
-        menu.drawMenu(appState, appState.menuState)
-        
-        local result = menu.handleInput(appState.menuState)
-        
-        if result == "redraw" then
-            -- Continue loop to redraw
-        elseif result == "YouTube Music Player" then
-            appState.mode = "youtube"
-            appState.musicState = state.init()
-            return
-        elseif result == "Network Radio" then
-            appState.mode = "radio_client"
-            appState.radioState = radio.initClient()
-            local success, message = radio.startClient(appState.radioState)
-            if not success then
-                -- Show error and return to menu
-                term.clear()
-                term.setCursorPos(1, 1)
-                term.setTextColor(colors.red)
-                print("Error: " .. message)
-                print("Press any key to continue...")
-                os.pullEvent("key")
-                appState.mode = "menu"
-            end
-            return
-        elseif result == "Host Radio Station" then
-            -- Get station name from user
-            local stationName = getStationName(appState)
-            if stationName then
-                appState.mode = "radio_host"
-                appState.radioState = radio.initHost(stationName)
-                local success, message = radio.startHost(appState.radioState)
-                if not success then
-                    -- Show error and return to menu
-                    term.clear()
-                    term.setCursorPos(1, 1)
-                    term.setTextColor(colors.red)
-                    print("Error: " .. message)
-                    print("Press any key to continue...")
-                    os.pullEvent("key")
-                    appState.mode = "menu"
-                end
-            else
-                appState.mode = "menu"
-            end
-            return
-        elseif result == "Exit" then
-            term.clear()
-            term.setCursorPos(1, 1)
-            term.setTextColor(colors.white)
-            print("Thanks for using Bognesferga Radio!")
-            return false
-        end
-    end
-    return true
-end
-
 -- Get station name input
 local function getStationName(appState)
     radio_ui.drawStationNameInput(appState)
@@ -110,6 +50,66 @@ local function getStationName(appState)
             term.write(key)
         end
     end
+end
+
+-- Main menu loop
+local function runMainMenu(appState)
+    while appState.mode == "menu" do
+        menu.drawMenu(appState, appState.menuState)
+        
+        local result = menu.handleInput(appState.menuState)
+        
+        if result == "redraw" then
+            -- Continue loop to redraw
+        elseif result == "YouTube Music Player" then
+            appState.mode = "youtube"
+            appState.musicState = state.init()
+            return true
+        elseif result == "Network Radio" then
+            appState.mode = "radio_client"
+            appState.radioState = radio.initClient()
+            local success, message = radio.startClient(appState.radioState)
+            if not success then
+                -- Show error and return to menu
+                term.clear()
+                term.setCursorPos(1, 1)
+                term.setTextColor(colors.red)
+                print("Error: " .. message)
+                print("Press any key to continue...")
+                os.pullEvent("key")
+                appState.mode = "menu"
+            end
+            return true
+        elseif result == "Host Radio Station" then
+            -- Get station name from user
+            local stationName = getStationName(appState)
+            if stationName then
+                appState.mode = "radio_host"
+                appState.radioState = radio.initHost(stationName)
+                local success, message = radio.startHost(appState.radioState)
+                if not success then
+                    -- Show error and return to menu
+                    term.clear()
+                    term.setCursorPos(1, 1)
+                    term.setTextColor(colors.red)
+                    print("Error: " .. message)
+                    print("Press any key to continue...")
+                    os.pullEvent("key")
+                    appState.mode = "menu"
+                end
+            else
+                appState.mode = "menu"
+            end
+            return true
+        elseif result == "Exit" then
+            term.clear()
+            term.setCursorPos(1, 1)
+            term.setTextColor(colors.white)
+            print("Thanks for using Bognesferga Radio!")
+            return false
+        end
+    end
+    return true
 end
 
 -- YouTube music player loop
