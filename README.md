@@ -4,7 +4,7 @@
 
 Open a fresh computer and run the following commands:
 ```
-pastebin get c49SqkT9 download
+pastebin get WEsL8DUL download
 ```
 ```
 download
