@@ -65,7 +65,7 @@ local function confirmUninstall()
     colorPrint("This will remove ALL Bognesferga Radio files:", colors.yellow)
     colorPrint("", colors.white)
     
-    -- List files that will be removed
+    -- List files that will be removed - UPDATED for new modular structure
     local filesToRemove = {
         "startup.lua",
         "uninstall.lua",
@@ -76,31 +76,24 @@ local function confirmUninstall()
         "  ├── Core system:",
         "  │   └── core/system.lua",
         "  ├── UI components:",
+        "  │   ├── ui/themes.lua",
         "  │   ├── ui/components.lua",
-        "  │   └── ui.lua",
+        "  │   └── ui/layouts/",
         "  ├── Audio system:",
-        "  │   ├── audio/speaker_manager.lua",
-        "  │   └── audio.lua",
+        "  │   └── audio/speaker_manager.lua",
         "  ├── Network system:",
-        "  │   ├── network/http_client.lua",
-        "  │   └── network.lua",
+        "  │   └── network/http_client.lua",
         "  ├── Utilities:",
         "  │   └── utils/common.lua",
         "  ├── Middleware:",
         "  │   └── middleware/error_handler.lua",
-        "  ├── Legacy modules:",
-        "  │   ├── config.lua",
-        "  │   ├── state.lua", 
-        "  │   ├── input.lua",
-        "  │   ├── main.lua",
-        "  │   ├── menu.lua",
-        "  │   ├── radio.lua",
-        "  │   └── radio_ui.lua",
+        "  ├── Feature modules:",
+        "  │   ├── features/menu/main_menu.lua",
+        "  │   └── features/youtube/youtube_player.lua",
+        "  ├── Configuration:",
+        "  │   └── config.lua",
         "  ├── Application management:",
-        "  │   ├── system_init.lua",
-        "  │   ├── app_manager.lua",
-        "  │   ├── input_handlers.lua",
-        "  │   └── mode_handlers.lua",
+        "  │   └── app_manager.lua",
         "  ├── Telemetry system:",
         "  │   ├── telemetry/telemetry.lua",
         "  │   ├── telemetry/logger.lua",
@@ -124,68 +117,52 @@ local function confirmUninstall()
 end
 
 local function removeFiles()
-    local filesToRemove = {
+    -- Files to remove - UPDATED to include radio modules
+    local files = {
         -- Core files
-        {path = "startup.lua", name = "Main startup file"},
-        {path = "install.lua", name = "Installer script"},
-        {path = "download", name = "Download script"},
-        {path = "version.txt", name = "Version file"},
+        "startup.lua",
+        "version.txt",
         
-        -- Core system modules
-        {path = "musicplayer/core/system.lua", name = "Core system module"},
+        -- Configuration
+        "musicplayer/config.lua",
+        "musicplayer/app_manager.lua",
         
-        -- UI modules
-        {path = "musicplayer/ui/components.lua", name = "UI components module"},
-        {path = "musicplayer/ui.lua", name = "UI rendering module"},
-        
-        -- Audio modules
-        {path = "musicplayer/audio/speaker_manager.lua", name = "Speaker manager module"},
-        {path = "musicplayer/audio.lua", name = "Audio processing module"},
-        
-        -- Network modules
-        {path = "musicplayer/network/http_client.lua", name = "HTTP client module"},
-        {path = "musicplayer/network.lua", name = "Network handling module"},
-        
-        -- Utilities
-        {path = "musicplayer/utils/common.lua", name = "Common utilities module"},
-        
-        -- Middleware
-        {path = "musicplayer/middleware/error_handler.lua", name = "Error handling middleware"},
-        
-        -- Legacy modules
-        {path = "musicplayer/config.lua", name = "Configuration module"},
-        {path = "musicplayer/state.lua", name = "State management module"},
-        {path = "musicplayer/input.lua", name = "Input handling module"},
-        {path = "musicplayer/main.lua", name = "Main coordination module"},
-        {path = "musicplayer/menu.lua", name = "Menu system module"},
-        {path = "musicplayer/radio.lua", name = "Radio functionality module"},
-        {path = "musicplayer/radio_ui.lua", name = "Radio UI module"},
-        
-        -- Application management
-        {path = "musicplayer/system_init.lua", name = "System initialization module"},
-        {path = "musicplayer/app_manager.lua", name = "Application manager module"},
-        {path = "musicplayer/input_handlers.lua", name = "Input handlers module"},
-        {path = "musicplayer/mode_handlers.lua", name = "Mode handlers module"},
-        
-        -- Telemetry modules
-        {path = "musicplayer/telemetry/telemetry.lua", name = "Main telemetry module"},
-        {path = "musicplayer/telemetry/logger.lua", name = "Logging system module"},
-        {path = "musicplayer/telemetry/system_detector.lua", name = "System detection module"}
+        -- New modular files
+        "musicplayer/core/system.lua",
+        "musicplayer/utils/common.lua",
+        "musicplayer/utils/string_utils.lua",
+        "musicplayer/utils/table_utils.lua",
+        "musicplayer/utils/time_utils.lua",
+        "musicplayer/middleware/error_handler.lua",
+        "musicplayer/network/http_client.lua",
+        "musicplayer/network/radio_protocol.lua",
+        "musicplayer/audio/speaker_manager.lua",
+        "musicplayer/ui/themes.lua",
+        "musicplayer/ui/components.lua",
+        "musicplayer/ui/layouts/youtube.lua",
+        "musicplayer/ui/layouts/radio.lua",
+        "musicplayer/features/menu/main_menu.lua",
+        "musicplayer/features/youtube/youtube_player.lua",
+        "musicplayer/features/radio/radio_client.lua",
+        "musicplayer/features/radio/radio_host.lua",
+        "musicplayer/telemetry/telemetry.lua",
+        "musicplayer/telemetry/logger.lua",
+        "musicplayer/telemetry/system_detector.lua"
     }
     
     local removedCount = 0
-    local totalFiles = #filesToRemove + 8 -- +8 for directories, +1 for uninstall.lua (self-delete)
+    local totalFiles = #files + 8 -- +8 for directories, +1 for uninstall.lua (self-delete)
     
     colorPrint("Removing files...", colors.cyan)
     sleep(0.5)
     
     -- Remove individual files
-    for i, file in ipairs(filesToRemove) do
+    for i, file in ipairs(files) do
         term.setTextColor(colors.white)
-        term.write("Removing " .. file.name .. "... ")
+        term.write("Removing " .. file .. "... ")
         
-        if fs.exists(file.path) then
-            fs.delete(file.path)
+        if fs.exists(file) then
+            fs.delete(file)
             colorPrint("✓ Removed", colors.lime)
             removedCount = removedCount + 1
         else
@@ -195,15 +172,20 @@ local function removeFiles()
         sleep(0.1)
     end
     
-    -- Remove directories in reverse order (deepest first)
+    -- Directories to remove (in reverse order - deepest first)
     local directories = {
         "musicplayer/logs",
+        "musicplayer/features/radio",
+        "musicplayer/features/youtube", 
+        "musicplayer/features/menu",
+        "musicplayer/features",
+        "musicplayer/ui/layouts",
+        "musicplayer/ui",
         "musicplayer/telemetry",
         "musicplayer/middleware",
         "musicplayer/utils",
         "musicplayer/network",
         "musicplayer/audio",
-        "musicplayer/ui",
         "musicplayer/core",
         "musicplayer"
     }

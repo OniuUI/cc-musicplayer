@@ -97,10 +97,15 @@ local directories = {
 	"musicplayer",
 	"musicplayer/core",
 	"musicplayer/ui",
+	"musicplayer/ui/layouts",
 	"musicplayer/audio",
 	"musicplayer/network",
 	"musicplayer/utils",
 	"musicplayer/middleware",
+	"musicplayer/features",
+	"musicplayer/features/menu",
+	"musicplayer/features/youtube",
+	"musicplayer/features/radio",
 	"musicplayer/telemetry",
 	"musicplayer/logs"
 }
@@ -137,7 +142,7 @@ end
 
 sleep(0.5)
 
--- Files to download with new refactored structure
+-- Files to download - CLEANED UP to only include existing modular files
 local files = {
 	-- Core files
 	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
@@ -150,36 +155,35 @@ local files = {
 	{name = "system.lua", url = baseUri .. "musicplayer/core/system.lua", path = "musicplayer/core/system.lua"},
 	
 	-- UI modules
+	{name = "themes.lua", url = baseUri .. "musicplayer/ui/themes.lua", path = "musicplayer/ui/themes.lua"},
 	{name = "components.lua", url = baseUri .. "musicplayer/ui/components.lua", path = "musicplayer/ui/components.lua"},
-	{name = "ui.lua", url = baseUri .. "musicplayer/ui.lua", path = "musicplayer/ui.lua"},
+	{name = "youtube.lua", url = baseUri .. "musicplayer/ui/layouts/youtube.lua", path = "musicplayer/ui/layouts/youtube.lua"},
+	{name = "radio.lua", url = baseUri .. "musicplayer/ui/layouts/radio.lua", path = "musicplayer/ui/layouts/radio.lua"},
 	
 	-- Audio modules
 	{name = "speaker_manager.lua", url = baseUri .. "musicplayer/audio/speaker_manager.lua", path = "musicplayer/audio/speaker_manager.lua"},
-	{name = "audio.lua", url = baseUri .. "musicplayer/audio.lua", path = "musicplayer/audio.lua"},
 	
 	-- Network modules
 	{name = "http_client.lua", url = baseUri .. "musicplayer/network/http_client.lua", path = "musicplayer/network/http_client.lua"},
-	{name = "network.lua", url = baseUri .. "musicplayer/network.lua", path = "musicplayer/network.lua"},
+	{name = "radio_protocol.lua", url = baseUri .. "musicplayer/network/radio_protocol.lua", path = "musicplayer/network/radio_protocol.lua"},
 	
 	-- Utilities
 	{name = "common.lua", url = baseUri .. "musicplayer/utils/common.lua", path = "musicplayer/utils/common.lua"},
+	{name = "string_utils.lua", url = baseUri .. "musicplayer/utils/string_utils.lua", path = "musicplayer/utils/string_utils.lua"},
+	{name = "table_utils.lua", url = baseUri .. "musicplayer/utils/table_utils.lua", path = "musicplayer/utils/table_utils.lua"},
+	{name = "time_utils.lua", url = baseUri .. "musicplayer/utils/time_utils.lua", path = "musicplayer/utils/time_utils.lua"},
 	
 	-- Middleware
 	{name = "error_handler.lua", url = baseUri .. "musicplayer/middleware/error_handler.lua", path = "musicplayer/middleware/error_handler.lua"},
 	
-	-- Legacy modules (still needed for compatibility)
-	{name = "state.lua", url = baseUri .. "musicplayer/state.lua", path = "musicplayer/state.lua"},
-	{name = "input.lua", url = baseUri .. "musicplayer/input.lua", path = "musicplayer/input.lua"},
-	{name = "main.lua", url = baseUri .. "musicplayer/main.lua", path = "musicplayer/main.lua"},
-	{name = "menu.lua", url = baseUri .. "musicplayer/menu.lua", path = "musicplayer/menu.lua"},
-	{name = "radio.lua", url = baseUri .. "musicplayer/radio.lua", path = "musicplayer/radio.lua"},
-	{name = "radio_ui.lua", url = baseUri .. "musicplayer/radio_ui.lua", path = "musicplayer/radio_ui.lua"},
+	-- Feature modules
+	{name = "main_menu.lua", url = baseUri .. "musicplayer/features/menu/main_menu.lua", path = "musicplayer/features/menu/main_menu.lua"},
+	{name = "youtube_player.lua", url = baseUri .. "musicplayer/features/youtube/youtube_player.lua", path = "musicplayer/features/youtube/youtube_player.lua"},
+	{name = "radio_client.lua", url = baseUri .. "musicplayer/features/radio/radio_client.lua", path = "musicplayer/features/radio/radio_client.lua"},
+	{name = "radio_host.lua", url = baseUri .. "musicplayer/features/radio/radio_host.lua", path = "musicplayer/features/radio/radio_host.lua"},
 	
 	-- Application management
-	{name = "system_init.lua", url = baseUri .. "musicplayer/system_init.lua", path = "musicplayer/system_init.lua"},
 	{name = "app_manager.lua", url = baseUri .. "musicplayer/app_manager.lua", path = "musicplayer/app_manager.lua"},
-	{name = "input_handlers.lua", url = baseUri .. "musicplayer/input_handlers.lua", path = "musicplayer/input_handlers.lua"},
-	{name = "mode_handlers.lua", url = baseUri .. "musicplayer/mode_handlers.lua", path = "musicplayer/mode_handlers.lua"},
 	
 	-- Telemetry modules
 	{name = "telemetry.lua", url = baseUri .. "musicplayer/telemetry/telemetry.lua", path = "musicplayer/telemetry/telemetry.lua"},

@@ -1,92 +1,237 @@
--- Application state management module for Bognesferga Radio
--- Handles app state initialization and management
+-- Application Manager for Bognesferga Radio
+-- Updated to use new modular architecture with feature-based organization
+
+local mainMenu = require("musicplayer.features.menu.main_menu")
+local youtubePlayer = require("musicplayer.features.youtube.youtube_player")
+local radioClient = require("musicplayer.features.radio.radio_client")
+local radioHost = require("musicplayer.features.radio.radio_host")
 
 local app_manager = {}
 
--- Initialize the application state with all necessary components
-function app_manager.initAppState(systemInfo, capabilities, modules, telemetry, logger)
-    logger.info("Startup", "Initializing application state...")
+function app_manager.initAppState(systemInfo, capabilities, systemModules, telemetry, logger)
+    logger.info("AppManager", "Initializing application state...")
     
     -- Switch to application display if available
     telemetry.switchToAppDisplay()
     
     local width, height = term.getSize()
-    logger.debug("Startup", "Display size: " .. width .. "x" .. height)
+    logger.debug("AppManager", "Display size: " .. width .. "x" .. height)
     
-    local appState = {
+    local state = {
+        -- System information
+        system_info = systemInfo,
+        capabilities = capabilities,
+        
+        -- System modules
+        system = systemModules.system,
+        httpClient = systemModules.httpClient,
+        speakerManager = systemModules.speakerManager,
+        errorHandler = systemModules.errorHandler,
+        
+        -- Telemetry and logging
+        telemetry = telemetry,
+        logger = logger,
+        
+        -- Application state
+        current_mode = "menu",
+        running = true,
+        
+        -- Screen dimensions
         width = width,
         height = height,
-        mode = "menu", -- menu, youtube, radio_client, radio_host
+        
+        -- Feature states (initialized when needed)
         menuState = nil,
-        musicState = nil,
-        radioState = nil,
-        systemInfo = systemInfo,
-        capabilities = capabilities,
-        telemetry = telemetry,
-        modules = modules
+        youtubeState = nil,
+        radioClientState = nil,
+        radioHostState = nil
     }
     
     -- Initialize menu state
-    if modules.menu then
-        appState.menuState = modules.menu.init()
-        logger.debug("Startup", "Menu state initialized")
-    end
+    state.menuState = mainMenu.init()
+    logger.debug("AppManager", "Menu state initialized")
     
-    logger.info("Startup", "Application state initialized")
-    return appState
+    logger.info("AppManager", "Application state initialized")
+    return state
 end
 
--- Main application loop with comprehensive error handling
 function app_manager.runMainLoop(appState, logger, telemetry)
-    local mode_handlers = require("musicplayer.mode_handlers")
+    logger.info("AppManager", "Starting main application loop")
+    logger.info("AppManager", "Bognesferga Radio fully initialized")
     
-    logger.info("Startup", "Bognesferga Radio fully initialized")
-    
-    -- Main application loop
-    while true do
-        telemetry.logPerformanceEvent("main_loop")
-        
+    while appState.running do
         -- Monitor system health periodically
         if math.random() < 0.01 then -- 1% chance per loop
             telemetry.monitorHealth()
         end
         
+        telemetry.logPerformanceEvent("main_loop")
+        
         local success, result = pcall(function()
-            if appState.mode == "menu" then
-                return mode_handlers.runMainMenu(appState, logger, telemetry)
-            elseif appState.mode == "youtube" then
-                mode_handlers.runYouTubePlayer(appState, logger, telemetry)
-                return true
-            elseif appState.mode == "radio_client" then
-                mode_handlers.runRadioClient(appState, logger, telemetry)
-                return true
-            elseif appState.mode == "radio_host" then
-                mode_handlers.runRadioHost(appState, logger, telemetry)
-                return true
+            if appState.current_mode == "menu" then
+                return app_manager.runMenu(appState)
+            elseif appState.current_mode == "youtube" then
+                return app_manager.runYouTube(appState)
+            elseif appState.current_mode == "radio_client" then
+                return app_manager.runRadioClient(appState)
+            elseif appState.current_mode == "radio_host" then
+                return app_manager.runRadioHost(appState)
+            else
+                logger.error("AppManager", "Unknown mode: " .. tostring(appState.current_mode))
+                return "menu"
             end
-            return true
         end)
         
-        if not success then
-            logger.error("Main", "Error in application loop: " .. tostring(result))
-            appState.mode = "menu" -- Return to menu on error
-        elseif result == false then
-            break -- Exit requested
+        if success then
+            if result == "exit" then
+                appState.running = false
+                logger.info("AppManager", "Application exit requested")
+            elseif result then
+                appState.current_mode = result
+                logger.debug("AppManager", "Mode changed to: " .. result)
+            end
+        else
+            -- Handle errors gracefully
+            logger.error("AppManager", "Error in main loop: " .. tostring(result))
+            appState.errorHandler.handleUIError(result, "Main application loop")
+            
+            -- Return to menu on error
+            appState.current_mode = "menu"
+            
+            -- Show error message briefly
+            term.setBackgroundColor(colors.red)
+            term.setTextColor(colors.white)
+            term.clear()
+            term.setCursorPos(1, 1)
+            print("An error occurred. Returning to menu...")
+            print("Error: " .. tostring(result))
+            print("Press any key to continue...")
+            os.pullEvent("key")
         end
     end
     
-    logger.info("Startup", "Application shutting down")
+    logger.info("AppManager", "Main application loop ended")
+end
+
+function app_manager.runMenu(appState)
+    -- Update screen dimensions
+    appState.width, appState.height = term.getSize()
+    
+    while true do
+        mainMenu.drawMenu(appState, appState.menuState)
+        
+        local action = mainMenu.handleInput(appState.menuState)
+        
+        if action == "youtube" then
+            return "youtube"
+        elseif action == "radio_client" then
+            return "radio_client"
+        elseif action == "radio_host" then
+            return "radio_host"
+        elseif action == "exit" then
+            return "exit"
+        elseif action == "redraw" then
+            -- Continue loop to redraw
+        end
+    end
+end
+
+function app_manager.runYouTube(appState)
+    -- Initialize YouTube state if not already done
+    if not appState.youtubeState then
+        appState.youtubeState = youtubePlayer.init(appState.system)
+        appState.logger.info("AppManager", "YouTube player initialized")
+    end
+    
+    -- Update screen dimensions
+    appState.youtubeState.width, appState.youtubeState.height = term.getSize()
+    
+    -- Run YouTube player
+    local result = youtubePlayer.run(appState.youtubeState)
+    
+    appState.logger.info("AppManager", "YouTube player exited")
+    return result or "menu"
+end
+
+function app_manager.runRadioClient(appState)
+    -- Initialize radio client state if not already done
+    if not appState.radioClientState then
+        local systemModules = {
+            system = appState.system,
+            httpClient = appState.httpClient,
+            speakerManager = appState.speakerManager,
+            errorHandler = appState.errorHandler,
+            logger = appState.logger
+        }
+        appState.radioClientState = radioClient.init(systemModules)
+        appState.logger.info("AppManager", "Radio client initialized")
+    end
+    
+    -- Run radio client
+    local result = radioClient.run(appState.radioClientState)
+    
+    appState.logger.info("AppManager", "Radio client exited")
+    return result or "menu"
+end
+
+function app_manager.runRadioHost(appState)
+    -- Initialize radio host state if not already done
+    if not appState.radioHostState then
+        local systemModules = {
+            system = appState.system,
+            httpClient = appState.httpClient,
+            speakerManager = appState.speakerManager,
+            errorHandler = appState.errorHandler,
+            logger = appState.logger
+        }
+        appState.radioHostState = radioHost.init(systemModules)
+        appState.logger.info("AppManager", "Radio host initialized")
+    end
+    
+    -- Run radio host
+    local result = radioHost.run(appState.radioHostState)
+    
+    appState.logger.info("AppManager", "Radio host exited")
+    return result or "menu"
 end
 
 -- Cleanup and shutdown procedures
-function app_manager.cleanup(telemetry)
-    -- Cleanup
-    telemetry.cleanup()
+function app_manager.cleanup(appState)
+    local logger = appState.logger
+    local telemetry = appState.telemetry
     
-    -- Final message
+    logger.info("AppManager", "Starting application cleanup")
+    
+    -- Cleanup feature states
+    if appState.youtubeState then
+        youtubePlayer.cleanup(appState.youtubeState)
+        logger.debug("AppManager", "YouTube state cleaned up")
+    end
+    
+    if appState.radioClientState then
+        radioClient.cleanup(appState.radioClientState)
+        logger.debug("AppManager", "Radio client state cleaned up")
+    end
+    
+    if appState.radioHostState then
+        radioHost.cleanup(appState.radioHostState)
+        logger.debug("AppManager", "Radio host state cleaned up")
+    end
+    
+    -- Final telemetry
+    telemetry.logEvent("app_shutdown", {
+        uptime = os.clock(),
+        mode = appState.current_mode
+    })
+    
+    -- Reset terminal
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.white)
     term.clear()
     term.setCursorPos(1, 1)
-    term.setTextColor(colors.white)
+    term.setCursorBlink(false)
+    
+    -- Final message
     print("Thanks for using Bognesferga Radio!")
     
     -- Show performance summary
@@ -103,6 +248,8 @@ function app_manager.cleanup(telemetry)
             print("Total events processed: " .. totalEvents)
         end
     end
+    
+    logger.info("AppManager", "Application cleanup complete")
 end
 
 return app_manager 
