@@ -21,8 +21,12 @@ function youtubeUI.redrawScreen(state)
     term.setBackgroundColor(colors.black)
     term.clear()
 
-    -- Draw the tabs (from working original)
-    term.setCursorPos(1, 1)
+    -- Draw header and footer using components
+    components.drawHeader(state)
+    components.drawFooter(state)
+
+    -- Draw the tabs (adjusted for header)
+    term.setCursorPos(1, 2)
     term.setBackgroundColor(colors.gray)
     term.clearLine()
     
@@ -35,7 +39,7 @@ function youtubeUI.redrawScreen(state)
             term.setBackgroundColor(colors.gray)
         end
         
-        term.setCursorPos((math.floor((state.width/#TABS)*(i-0.5)))-math.ceil(#TABS[i]/2)+1, 1)
+        term.setCursorPos((math.floor((state.width/#TABS)*(i-0.5)))-math.ceil(#TABS[i]/2)+1, 2)
         term.write(TABS[i])
     end
 
@@ -47,58 +51,62 @@ function youtubeUI.redrawScreen(state)
 end
 
 function youtubeUI.drawNowPlaying(state)
-    -- Song info (from working original)
+    -- Song info (adjusted for header)
     if state.now_playing ~= nil then
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.white)
-        term.setCursorPos(2, 3)
+        term.setCursorPos(2, 4)
         term.write(state.now_playing.name)
         term.setTextColor(colors.lightGray)
-        term.setCursorPos(2, 4)
+        term.setCursorPos(2, 5)
         term.write(state.now_playing.artist)
     else
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.lightGray)
-        term.setCursorPos(2, 3)
+        term.setCursorPos(2, 4)
         term.write("Not playing")
     end
 
-    -- Status indicators (from working original)
+    -- Status indicators (adjusted for header)
     if state.is_loading == true then
         term.setTextColor(colors.gray)
         term.setBackgroundColor(colors.black)
-        term.setCursorPos(2, 5)
+        term.setCursorPos(2, 6)
         term.write("Loading...")
     elseif state.is_error == true then
         term.setTextColor(colors.red)
         term.setBackgroundColor(colors.black)
-        term.setCursorPos(2, 5)
+        term.setCursorPos(2, 6)
         term.write("Network error")
     end
 
-    -- Control buttons (from working original)
+    -- Control buttons (adjusted for header)
     youtubeUI.drawControlButtons(state)
     
-    -- Volume slider (from working original)
+    -- Volume slider (adjusted for header)
     youtubeUI.drawVolumeSlider(state)
     
-    -- Queue (from working original)
+    -- Queue (adjusted for header and footer)
     if #state.queue > 0 then
         term.setBackgroundColor(colors.black)
         for i=1, #state.queue do
-            term.setTextColor(colors.white)
-            term.setCursorPos(2, 10 + (i-1)*2)
-            term.write(state.queue[i].name)
-            term.setTextColor(colors.lightGray)
-            term.setCursorPos(2, 11 + (i-1)*2)
-            term.write(state.queue[i].artist)
+            local queueY = 11 + (i-1)*2
+            -- Make sure we don't draw over the footer
+            if queueY < state.height - 1 then
+                term.setTextColor(colors.white)
+                term.setCursorPos(2, queueY)
+                term.write(state.queue[i].name)
+                term.setTextColor(colors.lightGray)
+                term.setCursorPos(2, queueY + 1)
+                term.write(state.queue[i].artist)
+            end
         end
     end
     
-    -- Back to menu button (our addition)
+    -- Back to menu button (adjusted for footer)
     term.setBackgroundColor(colors.gray)
     term.setTextColor(colors.white)
-    term.setCursorPos(2, state.height - 2)
+    term.setCursorPos(2, state.height - 3)
     term.write(" Back to Menu ")
 end
 
@@ -106,9 +114,9 @@ function youtubeUI.drawControlButtons(state)
     term.setTextColor(colors.white)
     term.setBackgroundColor(colors.gray)
 
-    -- Play/Stop button (from working original)
+    -- Play/Stop button (adjusted for header)
     if state.playing then
-        term.setCursorPos(2, 6)
+        term.setCursorPos(2, 7)
         term.write(" Stop ")
     else
         if state.now_playing ~= nil or #state.queue > 0 then
@@ -118,11 +126,11 @@ function youtubeUI.drawControlButtons(state)
             term.setTextColor(colors.lightGray)
             term.setBackgroundColor(colors.gray)
         end
-        term.setCursorPos(2, 6)
+        term.setCursorPos(2, 7)
         term.write(" Play ")
     end
 
-    -- Skip button (from working original)
+    -- Skip button (adjusted for header)
     if state.now_playing ~= nil or #state.queue > 0 then
         term.setTextColor(colors.white)
         term.setBackgroundColor(colors.gray)
@@ -130,10 +138,10 @@ function youtubeUI.drawControlButtons(state)
         term.setTextColor(colors.lightGray)
         term.setBackgroundColor(colors.gray)
     end
-    term.setCursorPos(2 + 7, 6)
+    term.setCursorPos(2 + 7, 7)
     term.write(" Skip ")
 
-    -- Loop button (from working original)
+    -- Loop button (adjusted for header)
     if state.looping ~= 0 then
         term.setTextColor(colors.black)
         term.setBackgroundColor(colors.white)
@@ -141,7 +149,7 @@ function youtubeUI.drawControlButtons(state)
         term.setTextColor(colors.white)
         term.setBackgroundColor(colors.gray)
     end
-    term.setCursorPos(2 + 7 + 7, 6)
+    term.setCursorPos(2 + 7 + 7, 7)
     if state.looping == 0 then
         term.write(" Loop Off ")
     elseif state.looping == 1 then
@@ -152,19 +160,19 @@ function youtubeUI.drawControlButtons(state)
 end
 
 function youtubeUI.drawVolumeSlider(state)
-    -- Volume slider (from working original)
-    term.setCursorPos(2, 8)
-    paintutils.drawBox(2, 8, 25, 8, colors.gray)
+    -- Volume slider (adjusted for header)
+    term.setCursorPos(2, 9)
+    paintutils.drawBox(2, 9, 25, 9, colors.gray)
     local width = math.floor(24 * (state.volume / 3) + 0.5) - 1
     if not (width == -1) then
-        paintutils.drawBox(2, 8, 2 + width, 8, colors.white)
+        paintutils.drawBox(2, 9, 2 + width, 9, colors.white)
     end
     if state.volume < 0.6 then
-        term.setCursorPos(2 + width + 2, 8)
+        term.setCursorPos(2 + width + 2, 9)
         term.setBackgroundColor(colors.gray)
         term.setTextColor(colors.white)
     else
-        term.setCursorPos(2 + width - 3 - (state.volume == 3 and 1 or 0), 8)
+        term.setCursorPos(2 + width - 3 - (state.volume == 3 and 1 or 0), 9)
         term.setBackgroundColor(colors.white)
         term.setTextColor(colors.black)
     end
@@ -172,26 +180,30 @@ function youtubeUI.drawVolumeSlider(state)
 end
 
 function youtubeUI.drawSearch(state)
-    -- Search bar (from working original)
-    paintutils.drawFilledBox(2, 3, state.width-1, 5, colors.lightGray)
+    -- Search bar (adjusted for header)
+    paintutils.drawFilledBox(2, 4, state.width-1, 6, colors.lightGray)
     term.setBackgroundColor(colors.lightGray)
-    term.setCursorPos(3, 4)
+    term.setCursorPos(3, 5)
     term.setTextColor(colors.black)
     term.write(state.last_search or "Search...")
 
-    -- Search results (from working original)
+    -- Search results (adjusted for header)
     if state.search_results ~= nil then
         term.setBackgroundColor(colors.black)
         for i=1, #state.search_results do
-            term.setTextColor(colors.white)
-            term.setCursorPos(2, 7 + (i-1)*2)
-            term.write(state.search_results[i].name)
-            term.setTextColor(colors.lightGray)
-            term.setCursorPos(2, 8 + (i-1)*2)
-            term.write(state.search_results[i].artist)
+            local resultY = 8 + (i-1)*2
+            -- Make sure we don't draw over the footer
+            if resultY < state.height - 1 then
+                term.setTextColor(colors.white)
+                term.setCursorPos(2, resultY)
+                term.write(state.search_results[i].name)
+                term.setTextColor(colors.lightGray)
+                term.setCursorPos(2, resultY + 1)
+                term.write(state.search_results[i].artist)
+            end
         end
     else
-        term.setCursorPos(2, 7)
+        term.setCursorPos(2, 8)
         term.setBackgroundColor(colors.black)
         if state.search_error == true then
             term.setTextColor(colors.red)
@@ -200,7 +212,7 @@ function youtubeUI.drawSearch(state)
             term.setTextColor(colors.lightGray)
             term.write("Searching...")
         else
-            term.setCursorPos(1, 7)
+            term.setCursorPos(1, 8)
             term.setTextColor(colors.lightGray)
             print("Tip: You can paste YouTube video or playlist links.")
         end
@@ -210,29 +222,34 @@ function youtubeUI.drawSearch(state)
     if state.in_search_result == true then
         term.setBackgroundColor(colors.black)
         term.clear()
-        term.setCursorPos(2, 2)
+        
+        -- Redraw header and footer for action menu
+        components.drawHeader(state)
+        components.drawFooter(state)
+        
+        term.setCursorPos(2, 3)
         term.setTextColor(colors.white)
         term.write(state.search_results[state.clicked_result].name)
-        term.setCursorPos(2, 3)
+        term.setCursorPos(2, 4)
         term.setTextColor(colors.lightGray)
         term.write(state.search_results[state.clicked_result].artist)
 
         term.setBackgroundColor(colors.gray)
         term.setTextColor(colors.white)
 
-        term.setCursorPos(2, 6)
+        term.setCursorPos(2, 7)
         term.clearLine()
         term.write("Play now")
 
-        term.setCursorPos(2, 8)
+        term.setCursorPos(2, 9)
         term.clearLine()
         term.write("Play next")
 
-        term.setCursorPos(2, 10)
+        term.setCursorPos(2, 11)
         term.clearLine()
         term.write("Add to queue")
 
-        term.setCursorPos(2, 13)
+        term.setCursorPos(2, 14)
         term.clearLine()
         term.write("Cancel")
     end

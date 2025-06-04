@@ -122,6 +122,10 @@ local function removeFiles()
         -- Core files
         "startup.lua",
         "version.txt",
+
+        -- Install files
+        "install.lua",
+        "download",
         
         -- Configuration
         "musicplayer/config.lua",

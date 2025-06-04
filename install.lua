@@ -235,9 +235,9 @@ print()
 
 -- Create version file
 local versionFile = fs.open("version.txt", "w")
-versionFile.write("4.1")
+versionFile.write("2.1")
 versionFile.close()
-colorPrint("✓ Created version file (v4.1)", colors.lime)
+colorPrint("✓ Created version file (v2.1)", colors.lime)
 
 sleep(0.5)
 

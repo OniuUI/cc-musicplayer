@@ -90,7 +90,7 @@ function youtubePlayer.uiLoop(state, speakers)
         if state.waiting_for_input then
             parallel.waitForAny(
                 function()
-                    term.setCursorPos(3, 4)
+                    term.setCursorPos(3, 5) -- Adjusted for header
                     term.setBackgroundColor(colors.white)
                     term.setTextColor(colors.black)
                     local input = read()
@@ -114,11 +114,18 @@ function youtubePlayer.uiLoop(state, speakers)
                 end,
                 function()
                     while state.waiting_for_input do
-                        local event, button, x, y = os.pullEvent("mouse_click")
-                        if y < 3 or y > 5 or x < 2 or x > state.width-1 then
-                            state.waiting_for_input = false
-                            os.queueEvent("redraw_screen")
-                            break
+                        local event, button, x, y = os.pullEvent()
+                        -- Handle both mouse_click and monitor_touch
+                        if event == "mouse_click" or event == "monitor_touch" then
+                            if event == "monitor_touch" then
+                                button = 1 -- Treat monitor touch as left click
+                            end
+                            -- Adjusted coordinates for header
+                            if y < 4 or y > 6 or x < 2 or x > state.width-1 then
+                                state.waiting_for_input = false
+                                os.queueEvent("redraw_screen")
+                                break
+                            end
                         end
                     end
                 end
@@ -126,12 +133,30 @@ function youtubePlayer.uiLoop(state, speakers)
         else
             parallel.waitForAny(
                 function()
-                    local event, button, x, y = os.pullEvent("mouse_click")
-                    return youtubePlayer.handleClick(state, speakers, button, x, y)
+                    local event, param1, param2, param3 = os.pullEvent()
+                    -- Handle both mouse_click and monitor_touch
+                    if event == "mouse_click" or event == "monitor_touch" then
+                        local button, x, y
+                        if event == "mouse_click" then
+                            button, x, y = param1, param2, param3
+                        else -- monitor_touch
+                            button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+                        end
+                        return youtubePlayer.handleClick(state, speakers, button, x, y)
+                    end
                 end,
                 function()
-                    local event, button, x, y = os.pullEvent("mouse_drag")
-                    return youtubePlayer.handleDrag(state, button, x, y)
+                    local event, param1, param2, param3 = os.pullEvent()
+                    -- Handle both mouse_drag and monitor_drag
+                    if event == "mouse_drag" or event == "monitor_drag" then
+                        local button, x, y
+                        if event == "mouse_drag" then
+                            button, x, y = param1, param2, param3
+                        else -- monitor_drag
+                            button, x, y = 1, param2, param3  -- Treat monitor drag as left drag
+                        end
+                        return youtubePlayer.handleDrag(state, button, x, y)
+                    end
                 end,
                 function()
                     local event = os.pullEvent("redraw_screen")
@@ -142,12 +167,12 @@ function youtubePlayer.uiLoop(state, speakers)
     end
 end
 
--- Handle mouse clicks (from working original with our error handling)
+-- Handle mouse clicks (from working original with our error handling and coordinate adjustments)
 function youtubePlayer.handleClick(state, speakers, button, x, y)
     if button == 1 then
-        -- Tab clicks
+        -- Tab clicks (adjusted for header)
         if state.in_search_result == false then
-            if y == 1 then
+            if y == 2 then -- Tab row is now at y=2
                 if x < state.width/2 then
                     state.tab = 1
                 else
@@ -160,26 +185,27 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
         
         -- Search tab handling
         if state.tab == 2 and state.in_search_result == false then
-            -- Search box click
-            if y >= 3 and y <= 5 and x >= 1 and x <= state.width-1 then
-                paintutils.drawFilledBox(2, 3, state.width-1, 5, colors.white)
+            -- Search box click (adjusted for header)
+            if y >= 4 and y <= 6 and x >= 1 and x <= state.width-1 then
+                paintutils.drawFilledBox(2, 4, state.width-1, 6, colors.white)
                 term.setBackgroundColor(colors.white)
                 state.waiting_for_input = true
                 return
             end
 
-            -- Search result clicks
+            -- Search result clicks (adjusted for header)
             if state.search_results then
                 for i=1, #state.search_results do
-                    if y == 7 + (i-1)*2 or y == 8 + (i-1)*2 then
+                    local resultY = 8 + (i-1)*2
+                    if (y == resultY or y == resultY + 1) and resultY < state.height - 1 then
                         -- Highlight selected result
                         term.setBackgroundColor(colors.white)
                         term.setTextColor(colors.black)
-                        term.setCursorPos(2, 7 + (i-1)*2)
+                        term.setCursorPos(2, resultY)
                         term.clearLine()
                         term.write(state.search_results[i].name)
                         term.setTextColor(colors.gray)
-                        term.setCursorPos(2, 8 + (i-1)*2)
+                        term.setCursorPos(2, resultY + 1)
                         term.clearLine()
                         term.write(state.search_results[i].artist)
                         sleep(0.2)
@@ -191,29 +217,29 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
                 end
             end
         elseif state.tab == 2 and state.in_search_result == true then
-            -- Song action menu clicks (from working original)
+            -- Song action menu clicks (adjusted for header)
             youtubePlayer.handleSongActionClick(state, speakers, y)
             return
         elseif state.tab == 1 and state.in_search_result == false then
-            -- Now playing tab clicks (from working original)
+            -- Now playing tab clicks (adjusted for header)
             youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
             return
         end
         
-        -- Back to menu button
-        if y == state.height - 2 and x >= 2 and x <= 15 then
+        -- Back to menu button (adjusted for footer)
+        if y == state.height - 3 and x >= 2 and x <= 15 then
             return "back_to_menu"
         end
     end
 end
 
--- Handle song action menu clicks (from working original)
+-- Handle song action menu clicks (adjusted for header)
 function youtubePlayer.handleSongActionClick(state, speakers, y)
     term.setBackgroundColor(colors.white)
     term.setTextColor(colors.black)
 
-    if y == 6 then -- Play now
-        term.setCursorPos(2, 6)
+    if y == 7 then -- Play now (adjusted for header)
+        term.setCursorPos(2, 7)
         term.clearLine()
         term.write("Play now")
         sleep(0.2)
@@ -245,8 +271,8 @@ function youtubePlayer.handleSongActionClick(state, speakers, y)
         state.logger.info("YouTube", "Playing now: " .. state.now_playing.name)
         os.queueEvent("audio_update")
         
-    elseif y == 8 then -- Play next
-        term.setCursorPos(2, 8)
+    elseif y == 9 then -- Play next (adjusted for header)
+        term.setCursorPos(2, 9)
         term.clearLine()
         term.write("Play next")
         sleep(0.2)
@@ -264,8 +290,8 @@ function youtubePlayer.handleSongActionClick(state, speakers, y)
         state.logger.info("YouTube", "Added to play next: " .. selectedSong.name)
         os.queueEvent("audio_update")
         
-    elseif y == 10 then -- Add to queue
-        term.setCursorPos(2, 10)
+    elseif y == 11 then -- Add to queue (adjusted for header)
+        term.setCursorPos(2, 11)
         term.clearLine()
         term.write("Add to queue")
         sleep(0.2)
@@ -283,8 +309,8 @@ function youtubePlayer.handleSongActionClick(state, speakers, y)
         state.logger.info("YouTube", "Added to queue: " .. selectedSong.name)
         os.queueEvent("audio_update")
         
-    elseif y == 13 then -- Cancel
-        term.setCursorPos(2, 13)
+    elseif y == 14 then -- Cancel (adjusted for header)
+        term.setCursorPos(2, 14)
         term.clearLine()
         term.write("Cancel")
         sleep(0.2)
@@ -294,15 +320,15 @@ function youtubePlayer.handleSongActionClick(state, speakers, y)
     youtubeUI.redrawScreen(state)
 end
 
--- Handle now playing clicks (from working original)
+-- Handle now playing clicks (adjusted for header)
 function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
-    if y == 6 then
+    if y == 7 then -- Control buttons row (adjusted for header)
         -- Play/stop button
         if x >= 2 and x < 2 + 6 then
             if state.playing or state.now_playing ~= nil or #state.queue > 0 then
                 term.setBackgroundColor(colors.white)
                 term.setTextColor(colors.black)
-                term.setCursorPos(2, 6)
+                term.setCursorPos(2, 7)
                 if state.playing then
                     term.write(" Stop ")
                 else 
@@ -344,7 +370,7 @@ function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
             if state.now_playing ~= nil or #state.queue > 0 then
                 term.setBackgroundColor(colors.white)
                 term.setTextColor(colors.black)
-                term.setCursorPos(2 + 7, 6)
+                term.setCursorPos(2 + 7, 7)
                 term.write(" Skip ")
                 sleep(0.2)
 
@@ -390,7 +416,7 @@ function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
         end
     end
 
-    if y == 8 then
+    if y == 9 then -- Volume slider row (adjusted for header)
         -- Volume slider
         if x >= 1 and x < 2 + 24 then
             state.volume = (x - 1) / 24 * 3
@@ -402,10 +428,10 @@ function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
     youtubeUI.redrawScreen(state)
 end
 
--- Handle mouse drag (from working original)
+-- Handle mouse drag (adjusted for header)
 function youtubePlayer.handleDrag(state, button, x, y)
     if button == 1 and state.tab == 1 and state.in_search_result == false then
-        if y >= 7 and y <= 9 then
+        if y >= 8 and y <= 10 then -- Volume slider area (adjusted for header)
             -- Volume slider
             if x >= 1 and x < 2 + 24 then
                 state.volume = (x - 1) / 24 * 3
