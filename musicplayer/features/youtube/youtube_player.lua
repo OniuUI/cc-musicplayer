@@ -1,10 +1,7 @@
 -- YouTube Music Player Feature
--- Consolidated YouTube player functionality with improved organization
+-- Enhanced with complete working functionality from original while maintaining modular architecture
 
 local youtubeUI = require("musicplayer.ui.layouts.youtube")
-local httpClient = require("musicplayer.network.http_client")
-local speakerManager = require("musicplayer.audio.speaker_manager")
-local errorHandler = require("musicplayer.middleware.error_handler")
 
 local youtubePlayer = {}
 
@@ -15,32 +12,50 @@ function youtubePlayer.init(systemState)
         width = 0,
         height = 0,
         
-        -- Playback state
+        -- Playback state (from working original)
         playing = false,
-        volume = 1.0,
-        looping = 0, -- 0 = off, 1 = all, 2 = one
+        volume = 1.5, -- Default volume from working original
+        looping = 0, -- 0 = off, 1 = queue, 2 = song
         
         -- Current content
         now_playing = nil,
         queue = {},
         
-        -- Search state
+        -- Search state (from working original)
         search_results = nil,
         search_error = false,
         last_search = nil,
-        selected_result = 1,
+        last_search_url = nil,
+        in_search_result = false,
+        clicked_result = nil,
         
         -- Loading states
         is_loading = false,
         is_error = false,
         waiting_for_input = false,
         
+        -- Audio processing state (from working original)
+        playing_id = nil,
+        last_download_url = nil,
+        playing_status = 0,
+        player_handle = nil,
+        start = nil,
+        pcm = nil,
+        size = nil,
+        decoder = require("cc.audio.dfpwm").make_decoder(),
+        needs_next_chunk = 0,
+        buffer = nil,
+        
         -- System references
         system = systemState,
         httpClient = systemState.httpClient,
         speakerManager = systemState.speakerManager,
         errorHandler = systemState.errorHandler,
-        logger = systemState.logger
+        logger = systemState.logger,
+        
+        -- API configuration (from working original)
+        api_base_url = "https://ipod-2to6magyna-uc.a.run.app/",
+        version = "2.1"
     }
 end
 
@@ -48,324 +63,566 @@ function youtubePlayer.run(state)
     -- Initialize screen dimensions
     state.width, state.height = term.getSize()
     
-    -- Main loop
-    while true do
-        youtubeUI.redrawScreen(state)
-        
-        local action = youtubePlayer.handleInput(state)
-        
-        if action == "exit" then
-            break
-        elseif action == "back_to_menu" then
-            break
-        end
+    -- Get raw speakers for direct access (like working original)
+    local speakers = state.speakerManager.getRawSpeakers()
+    if #speakers == 0 then
+        state.errorHandler.handleError("YouTube", "No speakers attached. You need to connect a speaker to this computer.", 3)
+        return "menu"
     end
+    
+    -- Run the main loops in parallel (from working original)
+    parallel.waitForAny(
+        function() return youtubePlayer.uiLoop(state, speakers) end,
+        function() return youtubePlayer.audioLoop(state, speakers) end,
+        function() return youtubePlayer.httpLoop(state) end
+    )
     
     -- Cleanup
     youtubePlayer.cleanup(state)
     return "menu"
 end
 
-function youtubePlayer.handleInput(state)
+-- UI Loop (enhanced from working original with our error handling)
+function youtubePlayer.uiLoop(state, speakers)
+    youtubeUI.redrawScreen(state)
+
     while true do
-        local event, param1, param2, param3 = os.pullEvent()
-        
-        if event == "key" then
-            local key = param1
-            
-            -- Global keys
-            if key == keys.escape then
-                return "back_to_menu"
-            elseif key == keys.tab then
-                state.tab = (state.tab % 2) + 1
-                return "redraw"
-            end
-            
-            -- Tab-specific keys
-            if state.tab == 1 then -- Now Playing
-                return youtubePlayer.handlePlayingKeys(state, key)
-            elseif state.tab == 2 then -- Search
-                return youtubePlayer.handleSearchKeys(state, key)
-            end
-            
-        elseif event == "mouse_click" or event == "monitor_touch" then
-            local button, x, y
-            if event == "mouse_click" then
-                button, x, y = param1, param2, param3
-            else
-                button, x, y = 1, param2, param3
-            end
-            
-            return youtubePlayer.handleClick(state, x, y)
-            
-        elseif event == "redraw_screen" then
-            return "redraw"
-        end
-    end
-end
+        if state.waiting_for_input then
+            parallel.waitForAny(
+                function()
+                    term.setCursorPos(3, 4)
+                    term.setBackgroundColor(colors.white)
+                    term.setTextColor(colors.black)
+                    local input = read()
 
-function youtubePlayer.handlePlayingKeys(state, key)
-    if key == keys.space then
-        return youtubePlayer.togglePlayback(state)
-    elseif key == keys.s then
-        return youtubePlayer.skipSong(state)
-    elseif key == keys.l then
-        return youtubePlayer.toggleLoop(state)
-    elseif key == keys.minus or key == keys.numPadSubtract then
-        return youtubePlayer.decreaseVolume(state)
-    elseif key == keys.equals or key == keys.numPadAdd then
-        return youtubePlayer.increaseVolume(state)
-    end
-    return nil
-end
+                    if string.len(input) > 0 then
+                        state.last_search = input
+                        state.last_search_url = state.api_base_url .. "?v=" .. state.version .. "&search=" .. textutils.urlEncode(input)
+                        http.request(state.last_search_url)
+                        state.search_results = nil
+                        state.search_error = false
+                        state.logger.info("YouTube", "Search requested: " .. input)
+                    else
+                        state.last_search = nil
+                        state.last_search_url = nil
+                        state.search_results = nil
+                        state.search_error = false
+                    end
 
-function youtubePlayer.handleSearchKeys(state, key)
-    if key == keys.enter then
-        state.waiting_for_input = true
-        youtubeUI.handleSearchInput(state, youtubePlayer)
-        return "redraw"
-    elseif key == keys.up and state.search_results then
-        state.selected_result = math.max(1, state.selected_result - 1)
-        return "redraw"
-    elseif key == keys.down and state.search_results then
-        state.selected_result = math.min(#state.search_results, state.selected_result + 1)
-        return "redraw"
-    elseif key == keys.a and state.search_results and state.search_results[state.selected_result] then
-        return youtubePlayer.addToQueue(state, state.search_results[state.selected_result])
-    end
-    return nil
-end
-
-function youtubePlayer.handleClick(state, x, y)
-    -- Tab clicks
-    if y == 2 then
-        local tabWidth = math.floor(state.width / 2)
-        if x <= tabWidth then
-            state.tab = 1
+                    state.waiting_for_input = false
+                    os.queueEvent("redraw_screen")
+                end,
+                function()
+                    while state.waiting_for_input do
+                        local event, button, x, y = os.pullEvent("mouse_click")
+                        if y < 3 or y > 5 or x < 2 or x > state.width-1 then
+                            state.waiting_for_input = false
+                            os.queueEvent("redraw_screen")
+                            break
+                        end
+                    end
+                end
+            )
         else
-            state.tab = 2
+            parallel.waitForAny(
+                function()
+                    local event, button, x, y = os.pullEvent("mouse_click")
+                    return youtubePlayer.handleClick(state, speakers, button, x, y)
+                end,
+                function()
+                    local event, button, x, y = os.pullEvent("mouse_drag")
+                    return youtubePlayer.handleDrag(state, button, x, y)
+                end,
+                function()
+                    local event = os.pullEvent("redraw_screen")
+                    youtubeUI.redrawScreen(state)
+                end
+            )
         end
-        return "redraw"
     end
-    
-    -- Tab-specific clicks
-    if state.tab == 1 then
-        return youtubePlayer.handlePlayingClick(state, x, y)
-    elseif state.tab == 2 then
-        return youtubePlayer.handleSearchClick(state, x, y)
-    end
-    
-    return nil
 end
 
-function youtubePlayer.handlePlayingClick(state, x, y)
-    -- Control buttons (row 8)
-    if y == 8 then
-        if x >= 3 and x <= 8 then -- PLAY/STOP
-            return youtubePlayer.togglePlayback(state)
-        elseif x >= 11 and x <= 16 then -- SKIP
-            return youtubePlayer.skipSong(state)
-        elseif x >= 19 and x <= 29 then -- LOOP
-            return youtubePlayer.toggleLoop(state)
-        elseif x >= 31 and x <= 44 then -- BACK TO MENU
+-- Handle mouse clicks (from working original with our error handling)
+function youtubePlayer.handleClick(state, speakers, button, x, y)
+    if button == 1 then
+        -- Tab clicks
+        if state.in_search_result == false then
+            if y == 1 then
+                if x < state.width/2 then
+                    state.tab = 1
+                else
+                    state.tab = 2
+                end
+                youtubeUI.redrawScreen(state)
+                return
+            end
+        end
+        
+        -- Search tab handling
+        if state.tab == 2 and state.in_search_result == false then
+            -- Search box click
+            if y >= 3 and y <= 5 and x >= 1 and x <= state.width-1 then
+                paintutils.drawFilledBox(2, 3, state.width-1, 5, colors.white)
+                term.setBackgroundColor(colors.white)
+                state.waiting_for_input = true
+                return
+            end
+
+            -- Search result clicks
+            if state.search_results then
+                for i=1, #state.search_results do
+                    if y == 7 + (i-1)*2 or y == 8 + (i-1)*2 then
+                        -- Highlight selected result
+                        term.setBackgroundColor(colors.white)
+                        term.setTextColor(colors.black)
+                        term.setCursorPos(2, 7 + (i-1)*2)
+                        term.clearLine()
+                        term.write(state.search_results[i].name)
+                        term.setTextColor(colors.gray)
+                        term.setCursorPos(2, 8 + (i-1)*2)
+                        term.clearLine()
+                        term.write(state.search_results[i].artist)
+                        sleep(0.2)
+                        state.in_search_result = true
+                        state.clicked_result = i
+                        youtubeUI.redrawScreen(state)
+                        return
+                    end
+                end
+            end
+        elseif state.tab == 2 and state.in_search_result == true then
+            -- Song action menu clicks (from working original)
+            youtubePlayer.handleSongActionClick(state, speakers, y)
+            return
+        elseif state.tab == 1 and state.in_search_result == false then
+            -- Now playing tab clicks (from working original)
+            youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
+            return
+        end
+        
+        -- Back to menu button
+        if y == state.height - 2 and x >= 2 and x <= 15 then
             return "back_to_menu"
         end
     end
-    
-    -- Volume controls
-    if y == 12 then
-        if x >= 3 and x <= 5 then -- [-]
-            return youtubePlayer.decreaseVolume(state)
-        elseif x >= 7 and x <= 9 then -- [+]
-            return youtubePlayer.increaseVolume(state)
-        end
-    end
-    
-    return nil
 end
 
-function youtubePlayer.handleSearchClick(state, x, y)
-    -- Search button
-    if y == 7 and x >= 3 and x <= 10 then
-        state.waiting_for_input = true
-        youtubePlayer.performSearch(state, "")
-        return "redraw"
-    end
-    
-    -- Search results
-    if state.search_results and y >= 11 and y <= 18 then
-        local resultIndex = y - 10
-        if resultIndex <= #state.search_results then
-            state.selected_result = resultIndex
-            return youtubePlayer.addToQueue(state, state.search_results[resultIndex])
-        end
-    end
-    
-    return nil
-end
+-- Handle song action menu clicks (from working original)
+function youtubePlayer.handleSongActionClick(state, speakers, y)
+    term.setBackgroundColor(colors.white)
+    term.setTextColor(colors.black)
 
--- Playback control functions
-function youtubePlayer.togglePlayback(state)
-    local success, error = errorHandler.safeExecute(function()
-        if state.playing then
-            speakerManager.stopAll()
-            state.playing = false
-            state.logger.info("YouTube", "Playback stopped")
+    if y == 6 then -- Play now
+        term.setCursorPos(2, 6)
+        term.clearLine()
+        term.write("Play now")
+        sleep(0.2)
+        state.in_search_result = false
+        
+        -- Stop current playback
+        for _, speaker in ipairs(speakers) do
+            speaker.stop()
+            os.queueEvent("playback_stopped")
+        end
+        
+        state.playing = true
+        state.is_error = false
+        state.playing_id = nil
+        
+        local selectedSong = state.search_results[state.clicked_result]
+        if selectedSong.type == "playlist" then
+            state.now_playing = selectedSong.playlist_items[1]
+            state.queue = {}
+            if #selectedSong.playlist_items > 1 then
+                for i=2, #selectedSong.playlist_items do
+                    table.insert(state.queue, selectedSong.playlist_items[i])
+                end
+            end
         else
-            if state.now_playing then
-                youtubePlayer.playCurrentSong(state)
+            state.now_playing = selectedSong
+        end
+        
+        state.logger.info("YouTube", "Playing now: " .. state.now_playing.name)
+        os.queueEvent("audio_update")
+        
+    elseif y == 8 then -- Play next
+        term.setCursorPos(2, 8)
+        term.clearLine()
+        term.write("Play next")
+        sleep(0.2)
+        state.in_search_result = false
+        
+        local selectedSong = state.search_results[state.clicked_result]
+        if selectedSong.type == "playlist" then
+            for i = #selectedSong.playlist_items, 1, -1 do
+                table.insert(state.queue, 1, selectedSong.playlist_items[i])
+            end
+        else
+            table.insert(state.queue, 1, selectedSong)
+        end
+        
+        state.logger.info("YouTube", "Added to play next: " .. selectedSong.name)
+        os.queueEvent("audio_update")
+        
+    elseif y == 10 then -- Add to queue
+        term.setCursorPos(2, 10)
+        term.clearLine()
+        term.write("Add to queue")
+        sleep(0.2)
+        state.in_search_result = false
+        
+        local selectedSong = state.search_results[state.clicked_result]
+        if selectedSong.type == "playlist" then
+            for i = 1, #selectedSong.playlist_items do
+                table.insert(state.queue, selectedSong.playlist_items[i])
+            end
+        else
+            table.insert(state.queue, selectedSong)
+        end
+        
+        state.logger.info("YouTube", "Added to queue: " .. selectedSong.name)
+        os.queueEvent("audio_update")
+        
+    elseif y == 13 then -- Cancel
+        term.setCursorPos(2, 13)
+        term.clearLine()
+        term.write("Cancel")
+        sleep(0.2)
+        state.in_search_result = false
+    end
+
+    youtubeUI.redrawScreen(state)
+end
+
+-- Handle now playing clicks (from working original)
+function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
+    if y == 6 then
+        -- Play/stop button
+        if x >= 2 and x < 2 + 6 then
+            if state.playing or state.now_playing ~= nil or #state.queue > 0 then
+                term.setBackgroundColor(colors.white)
+                term.setTextColor(colors.black)
+                term.setCursorPos(2, 6)
+                if state.playing then
+                    term.write(" Stop ")
+                else 
+                    term.write(" Play ")
+                end
+                sleep(0.2)
+            end
+            
+            if state.playing then
+                state.playing = false
+                for _, speaker in ipairs(speakers) do
+                    speaker.stop()
+                    os.queueEvent("playback_stopped")
+                end
+                state.playing_id = nil
+                state.is_loading = false
+                state.is_error = false
+                state.logger.info("YouTube", "Playback stopped")
+                os.queueEvent("audio_update")
+            elseif state.now_playing ~= nil then
+                state.playing_id = nil
+                state.playing = true
+                state.is_error = false
+                state.logger.info("YouTube", "Playback resumed")
+                os.queueEvent("audio_update")
             elseif #state.queue > 0 then
-                youtubePlayer.playNextInQueue(state)
+                state.now_playing = state.queue[1]
+                table.remove(state.queue, 1)
+                state.playing_id = nil
+                state.playing = true
+                state.is_error = false
+                state.logger.info("YouTube", "Playing from queue: " .. state.now_playing.name)
+                os.queueEvent("audio_update")
             end
         end
-    end, "YouTube playback toggle")
+
+        -- Skip button
+        if x >= 2 + 7 and x < 2 + 7 + 6 then
+            if state.now_playing ~= nil or #state.queue > 0 then
+                term.setBackgroundColor(colors.white)
+                term.setTextColor(colors.black)
+                term.setCursorPos(2 + 7, 6)
+                term.write(" Skip ")
+                sleep(0.2)
+
+                state.is_error = false
+                if state.playing then
+                    for _, speaker in ipairs(speakers) do
+                        speaker.stop()
+                        os.queueEvent("playback_stopped")
+                    end
+                end
+                
+                if #state.queue > 0 then
+                    if state.looping == 1 then
+                        table.insert(state.queue, state.now_playing)
+                    end
+                    state.now_playing = state.queue[1]
+                    table.remove(state.queue, 1)
+                    state.playing_id = nil
+                    state.logger.info("YouTube", "Skipped to: " .. state.now_playing.name)
+                else
+                    state.now_playing = nil
+                    state.playing = false
+                    state.is_loading = false
+                    state.is_error = false
+                    state.playing_id = nil
+                    state.logger.info("YouTube", "Queue finished")
+                end
+                os.queueEvent("audio_update")
+            end
+        end
+
+        -- Loop button
+        if x >= 2 + 7 + 7 and x < 2 + 7 + 7 + 12 then
+            if state.looping == 0 then
+                state.looping = 1
+            elseif state.looping == 1 then
+                state.looping = 2
+            else
+                state.looping = 0
+            end
+            local loopModes = {"OFF", "QUEUE", "SONG"}
+            state.logger.info("YouTube", "Loop mode: " .. loopModes[state.looping + 1])
+        end
+    end
+
+    if y == 8 then
+        -- Volume slider
+        if x >= 1 and x < 2 + 24 then
+            state.volume = (x - 1) / 24 * 3
+            state.speakerManager.setVolume(state.volume)
+            state.logger.debug("YouTube", "Volume set to " .. math.floor(state.volume * 100) .. "%")
+        end
+    end
+
+    youtubeUI.redrawScreen(state)
+end
+
+-- Handle mouse drag (from working original)
+function youtubePlayer.handleDrag(state, button, x, y)
+    if button == 1 and state.tab == 1 and state.in_search_result == false then
+        if y >= 7 and y <= 9 then
+            -- Volume slider
+            if x >= 1 and x < 2 + 24 then
+                state.volume = (x - 1) / 24 * 3
+                state.speakerManager.setVolume(state.volume)
+            end
+        end
+        youtubeUI.redrawScreen(state)
+    end
+end
+
+-- Audio Loop (from working original with our error handling)
+function youtubePlayer.audioLoop(state, speakers)
+    while true do
+        -- Audio processing (from working original)
+        if state.playing and state.now_playing then
+            local thisnowplayingid = state.now_playing.id
+            if state.playing_id ~= thisnowplayingid then
+                state.playing_id = thisnowplayingid
+                state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
+                state.playing_status = 0
+                state.needs_next_chunk = 1
+
+                http.request({url = state.last_download_url, binary = true})
+                state.is_loading = true
+                state.logger.info("YouTube", "Requesting audio stream for: " .. state.now_playing.name)
+
+                os.queueEvent("redraw_screen")
+                os.queueEvent("audio_update")
+            elseif state.playing_status == 1 and state.needs_next_chunk == 1 then
+                -- Process audio chunks (from working original)
+                youtubePlayer.processAudioChunks(state, speakers, thisnowplayingid)
+                os.queueEvent("audio_update")
+            end
+        end
+
+        os.pullEvent("audio_update")
+    end
+end
+
+-- Process audio chunks (from working original with our error handling)
+function youtubePlayer.processAudioChunks(state, speakers, thisnowplayingid)
+    local success, err = state.errorHandler.safeExecute(function()
+        while true do
+            local chunk = state.player_handle.read(state.size)
+            if not chunk then
+                -- Handle end of stream
+                youtubePlayer.handleEndOfStream(state)
+                state.player_handle.close()
+                state.needs_next_chunk = 0
+                break
+            else
+                -- Process chunk
+                if state.start then
+                    chunk, state.start = state.start .. chunk, nil
+                    state.size = state.size + 4
+                end
+        
+                state.buffer = state.decoder(chunk)
+                
+                -- Play on all speakers (from working original)
+                local success = youtubePlayer.playOnAllSpeakers(state, speakers, thisnowplayingid)
+                if not success then
+                    state.needs_next_chunk = 2
+                    state.is_error = true
+                    break
+                end
+                
+                -- Check if playback was stopped
+                if not state.playing or state.playing_id ~= thisnowplayingid then
+                    break
+                end
+            end
+        end
+    end, "YouTube audio processing")
     
     if not success then
         state.is_error = true
-        state.logger.error("YouTube", "Playback toggle failed: " .. tostring(error))
+        state.logger.error("YouTube", "Audio processing failed: " .. tostring(err))
     end
-    
-    return "redraw"
 end
 
-function youtubePlayer.skipSong(state)
-    local success, error = errorHandler.safeExecute(function()
-        speakerManager.stopAll()
-        state.playing = false
-        
+-- Play audio on all speakers (from working original)
+function youtubePlayer.playOnAllSpeakers(state, speakers, thisnowplayingid)
+    local fn = {}
+    for i, speaker in ipairs(speakers) do 
+        fn[i] = function()
+            local name = peripheral.getName(speaker)
+            if #speakers > 1 then
+                if speaker.playAudio(state.buffer, state.volume) then
+                    parallel.waitForAny(
+                        function()
+                            repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                        end,
+                        function()
+                            os.pullEvent("playback_stopped")
+                            return
+                        end
+                    )
+                    if not state.playing or state.playing_id ~= thisnowplayingid then
+                        return
+                    end
+                end
+            else
+                while not speaker.playAudio(state.buffer, state.volume) do
+                    parallel.waitForAny(
+                        function()
+                            repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                        end,
+                        function()
+                            os.pullEvent("playback_stopped")
+                            return
+                        end
+                    )
+                    if not state.playing or state.playing_id ~= thisnowplayingid then
+                        return
+                    end
+                end
+            end
+            if not state.playing or state.playing_id ~= thisnowplayingid then
+                return
+            end
+        end
+    end
+    
+    local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
+    return ok
+end
+
+-- Handle end of stream (from working original)
+function youtubePlayer.handleEndOfStream(state)
+    if state.looping == 2 or (state.looping == 1 and #state.queue == 0) then
+        state.playing_id = nil
+    elseif state.looping == 1 and #state.queue > 0 then
+        table.insert(state.queue, state.now_playing)
+        state.now_playing = state.queue[1]
+        table.remove(state.queue, 1)
+        state.playing_id = nil
+    else
         if #state.queue > 0 then
-            youtubePlayer.playNextInQueue(state)
+            state.now_playing = state.queue[1]
+            table.remove(state.queue, 1)
+            state.playing_id = nil
         else
             state.now_playing = nil
-            state.logger.info("YouTube", "Queue finished")
+            state.playing = false
+            state.playing_id = nil
+            state.is_loading = false
+            state.is_error = false
         end
-    end, "YouTube skip song")
-    
-    if not success then
-        state.is_error = true
-        state.logger.error("YouTube", "Skip failed: " .. tostring(error))
     end
     
-    return "redraw"
+    os.queueEvent("redraw_screen")
 end
 
-function youtubePlayer.toggleLoop(state)
-    state.looping = (state.looping + 1) % 3
-    local loopModes = {"OFF", "ALL", "ONE"}
-    state.logger.info("YouTube", "Loop mode: " .. loopModes[state.looping + 1])
-    return "redraw"
-end
+-- HTTP Loop (from working original with our error handling)
+function youtubePlayer.httpLoop(state)
+    while true do
+        parallel.waitForAny(
+            function()
+                local event, url, handle = os.pullEvent("http_success")
 
-function youtubePlayer.increaseVolume(state)
-    state.volume = math.min(3.0, state.volume + 0.1)
-    speakerManager.setVolume(state.volume)
-    state.logger.debug("YouTube", "Volume increased to " .. state.volume)
-    return "redraw"
-end
+                if url == state.last_search_url then
+                    local success, results = state.errorHandler.safeExecute(function()
+                        return textutils.unserialiseJSON(handle.readAll())
+                    end, "YouTube search response parsing")
+                    
+                    if success then
+                        state.search_results = results
+                        state.logger.info("YouTube", "Search completed: " .. #results .. " results")
+                    else
+                        state.search_error = true
+                        state.logger.error("YouTube", "Failed to parse search results")
+                    end
+                    os.queueEvent("redraw_screen")
+                end
+                
+                if url == state.last_download_url then
+                    state.is_loading = false
+                    state.player_handle = handle
+                    state.start = handle.read(4)
+                    state.size = 16 * 1024 - 4
+                    state.playing_status = 1
+                    state.logger.info("YouTube", "Audio stream ready")
+                    os.queueEvent("redraw_screen")
+                    os.queueEvent("audio_update")
+                end
+            end,
+            function()
+                local event, url = os.pullEvent("http_failure") 
 
-function youtubePlayer.decreaseVolume(state)
-    state.volume = math.max(0.0, state.volume - 0.1)
-    speakerManager.setVolume(state.volume)
-    state.logger.debug("YouTube", "Volume decreased to " .. state.volume)
-    return "redraw"
-end
-
--- Search and queue functions
-function youtubePlayer.performSearch(state, query)
-    if not query or #query == 0 then
-        return
-    end
-    
-    state.is_loading = true
-    state.search_error = false
-    state.last_search = query
-    
-    local success, results = errorHandler.safeExecute(function()
-        return httpClient.searchMusic(query)
-    end, "YouTube search")
-    
-    state.is_loading = false
-    
-    if success and results then
-        state.search_results = results
-        state.selected_result = 1
-        state.logger.info("YouTube", "Search completed: " .. #results .. " results")
-    else
-        state.search_error = true
-        state.search_results = nil
-        state.logger.error("YouTube", "Search failed: " .. tostring(results))
-    end
-end
-
-function youtubePlayer.addToQueue(state, song)
-    local success, error = errorHandler.safeExecute(function()
-        table.insert(state.queue, {
-            name = song.name,
-            artist = song.artist,
-            url = song.url,
-            duration = song.duration
-        })
-        
-        state.logger.info("YouTube", "Added to queue: " .. song.name)
-        
-        -- Auto-play if nothing is currently playing
-        if not state.playing and not state.now_playing then
-            youtubePlayer.playNextInQueue(state)
-        end
-    end, "YouTube add to queue")
-    
-    if not success then
-        state.logger.error("YouTube", "Failed to add to queue: " .. tostring(error))
-    end
-    
-    return "redraw"
-end
-
-function youtubePlayer.playCurrentSong(state)
-    if not state.now_playing then
-        return
-    end
-    
-    local success, error = errorHandler.safeExecute(function()
-        local audioUrl = httpClient.getAudioStream(state.now_playing.url)
-        if audioUrl then
-            speakerManager.playAudio(audioUrl, state.volume)
-            state.playing = true
-            state.logger.info("YouTube", "Playing: " .. state.now_playing.name)
-        else
-            error("Failed to get audio stream")
-        end
-    end, "YouTube play current song")
-    
-    if not success then
-        state.is_error = true
-        state.logger.error("YouTube", "Failed to play song: " .. tostring(error))
-    end
-end
-
-function youtubePlayer.playNextInQueue(state)
-    if #state.queue == 0 then
-        return
-    end
-    
-    local success, error = errorHandler.safeExecute(function()
-        -- Move next song from queue to now_playing
-        state.now_playing = table.remove(state.queue, 1)
-        
-        -- Play the song
-        youtubePlayer.playCurrentSong(state)
-    end, "YouTube play next in queue")
-    
-    if not success then
-        state.is_error = true
-        state.logger.error("YouTube", "Failed to play next song: " .. tostring(error))
+                if url == state.last_search_url then
+                    state.search_error = true
+                    state.logger.error("YouTube", "Search request failed")
+                    os.queueEvent("redraw_screen")
+                end
+                
+                if url == state.last_download_url then
+                    state.is_loading = false
+                    state.is_error = true
+                    state.playing = false
+                    state.playing_id = nil
+                    state.logger.error("YouTube", "Audio stream request failed")
+                    os.queueEvent("redraw_screen")
+                    os.queueEvent("audio_update")
+                end
+            end
+        )
     end
 end
 
 function youtubePlayer.cleanup(state)
-    local success, error = errorHandler.safeExecute(function()
-        speakerManager.stopAll()
+    local success, error = state.errorHandler.safeExecute(function()
+        state.speakerManager.stopAll()
         state.playing = false
+        if state.player_handle then
+            state.player_handle.close()
+        end
         state.logger.info("YouTube", "YouTube player cleaned up")
     end, "YouTube cleanup")
     

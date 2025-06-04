@@ -15,6 +15,10 @@ function speakerManager.init(errorHandler, telemetry)
     speakerManager.isPlaying = false
     speakerManager.currentVolume = config.default_volume
     
+    -- Audio processing state (from working original)
+    speakerManager.decoder = require("cc.audio.dfpwm").make_decoder()
+    speakerManager.buffer = nil
+    
     -- Detect and initialize speakers
     speakerManager.detectSpeakers()
     
@@ -100,6 +104,86 @@ function speakerManager.playAudio(buffer, volume)
     if not success then
         if speakerManager.errorHandler then
             speakerManager.errorHandler.handleAudioError("Parallel speaker playback failed: " .. tostring(err), "SpeakerManager")
+        end
+        return false
+    end
+    
+    return true
+end
+
+-- Enhanced audio processing from working original
+-- Process and play DFPWM audio chunk with proper synchronization
+function speakerManager.playDFPWMChunk(chunk, volume, playingId, isPlaying)
+    if not speakerManager.hasActiveSpeakers() then
+        return false
+    end
+    
+    volume = volume or speakerManager.currentVolume
+    volume = common.clamp(volume, 0, config.max_volume)
+    
+    -- Decode the chunk
+    speakerManager.buffer = speakerManager.decoder(chunk)
+    
+    -- Create speaker functions for parallel execution (from working original)
+    local speakerFunctions = {}
+    
+    for i, speakerInfo in ipairs(speakerManager.speakers) do
+        if speakerInfo.isActive then
+            speakerFunctions[i] = function()
+                local speaker = speakerInfo.peripheral
+                local name = speakerInfo.side
+                
+                if #speakerManager.speakers > 1 then
+                    -- Multiple speakers: wait for audio buffer to be consumed
+                    if speaker.playAudio(speakerManager.buffer, volume) then
+                        parallel.waitForAny(
+                            function()
+                                repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                            end,
+                            function()
+                                os.pullEvent("playback_stopped")
+                                return
+                            end
+                        )
+                        -- Check if playback was stopped or changed
+                        if not isPlaying() or (playingId and playingId() ~= playingId()) then
+                            return
+                        end
+                    end
+                else
+                    -- Single speaker: retry until buffer is accepted
+                    while not speaker.playAudio(speakerManager.buffer, volume) do
+                        parallel.waitForAny(
+                            function()
+                                repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                            end,
+                            function()
+                                os.pullEvent("playback_stopped")
+                                return
+                            end
+                        )
+                        
+                        -- Check if playback was stopped or changed
+                        if not isPlaying() or (playingId and playingId() ~= playingId()) then
+                            return
+                        end
+                    end
+                end
+                
+                -- Final check before returning
+                if not isPlaying() or (playingId and playingId() ~= playingId()) then
+                    return
+                end
+            end
+        end
+    end
+    
+    -- Execute all speaker functions in parallel (from working original)
+    local success, err = pcall(parallel.waitForAll, table.unpack(speakerFunctions))
+    
+    if not success then
+        if speakerManager.errorHandler then
+            speakerManager.errorHandler.handleAudioError("DFPWM chunk playback failed: " .. tostring(err), "SpeakerManager")
         end
         return false
     end
@@ -196,6 +280,17 @@ function speakerManager.stopAll()
     if speakerManager.logger then
         speakerManager.logger.debug("SpeakerManager", "All speakers stopped")
     end
+end
+
+-- Get raw speakers list (for direct access like in working original)
+function speakerManager.getRawSpeakers()
+    local rawSpeakers = {}
+    for _, speakerInfo in ipairs(speakerManager.speakers) do
+        if speakerInfo.isActive then
+            table.insert(rawSpeakers, speakerInfo.peripheral)
+        end
+    end
+    return rawSpeakers
 end
 
 -- Set volume for all speakers

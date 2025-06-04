@@ -6,6 +6,10 @@ local common = require("musicplayer.utils.common")
 
 local httpClient = {}
 
+-- API configuration from working original
+local API_BASE_URL = "https://ipod-2to6magyna-uc.a.run.app/"
+local API_VERSION = "2.1"
+
 -- Initialize HTTP client with error handler
 function httpClient.init(errorHandler)
     httpClient.errorHandler = errorHandler
@@ -137,6 +141,33 @@ function httpClient.getBinary(url, options)
     options.binary = true
     
     return httpClient.get(url, options)
+end
+
+-- Enhanced YouTube API methods using the working original's approach
+-- Make direct search request (async, returns immediately)
+function httpClient.requestYouTubeSearch(searchTerm)
+    if not searchTerm or searchTerm == "" then
+        return false, "Empty search term"
+    end
+    
+    local searchUrl = API_BASE_URL .. "?v=" .. API_VERSION .. "&search=" .. textutils.urlEncode(searchTerm)
+    
+    -- Make async request (like the working original)
+    http.request(searchUrl)
+    return true, searchUrl
+end
+
+-- Make direct audio stream request (async, returns immediately)
+function httpClient.requestYouTubeAudio(trackId)
+    if not trackId or trackId == "" then
+        return false, "Empty track ID"
+    end
+    
+    local streamUrl = API_BASE_URL .. "?v=" .. API_VERSION .. "&id=" .. textutils.urlEncode(trackId)
+    
+    -- Make async binary request (like the working original)
+    http.request({url = streamUrl, binary = true})
+    return true, streamUrl
 end
 
 -- Search for music
