@@ -74,9 +74,6 @@ function radioHost.run(state)
         end
     end
     
-    -- Start message handler
-    radioHost.startMessageHandler(state)
-    
     while true do
         -- Update screen dimensions
         state.width, state.height = term.getSize()
