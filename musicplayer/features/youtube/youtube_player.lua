@@ -94,15 +94,60 @@ function youtubePlayer.uiLoop(state, speakers)
         -- Update screen dimensions
         state.width, state.height = term.getSize()
         
-        -- Handle input with proper theme integration
-        local action = youtubePlayer.handleInput(state, speakers)
+        -- Handle input with proper theme integration and timeout
+        local action = youtubePlayer.handleInputWithTimeout(state, speakers, 0.5) -- 0.5 second timeout
         
         if action == "back_to_menu" then
             return "menu"
         elseif action == "redraw" then
             youtubeUI.redrawScreen(state)
+        elseif action == "timeout" then
+            -- Periodic update to keep UI responsive
+            youtubeUI.redrawScreen(state)
         end
     end
+end
+
+-- Handle input with timeout to keep UI responsive
+function youtubePlayer.handleInputWithTimeout(state, speakers, timeout)
+    if state.waiting_for_input then
+        return youtubePlayer.handleInput(state, speakers)
+    end
+    
+    -- Use pullEventRaw with timeout to allow periodic updates
+    local event, param1, param2, param3 = os.pullEventRaw(timeout)
+    
+    if not event then
+        return "timeout" -- Timeout occurred, allows periodic UI updates
+    end
+    
+    -- Handle escape key to force exit
+    if event == "key" and param1 == keys.escape then
+        state.logger.info("YouTube", "Escape key pressed - returning to menu")
+        return "back_to_menu"
+    end
+    
+    -- Handle both mouse_click and monitor_touch
+    if event == "mouse_click" or event == "monitor_touch" then
+        local button, x, y
+        if event == "mouse_click" then
+            button, x, y = param1, param2, param3
+        else -- monitor_touch
+            button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+        end
+        
+        local success, result = pcall(youtubePlayer.handleClick, state, speakers, button, x, y)
+        if success and result then
+            return result
+        elseif not success then
+            state.logger.error("YouTube", "Error handling click: " .. tostring(result))
+            return "redraw"
+        end
+    elseif event == "redraw_screen" then
+        return "redraw"
+    end
+    
+    return nil
 end
 
 function youtubePlayer.handleInput(state, speakers)
@@ -124,13 +169,46 @@ function youtubePlayer.handleInput(state, speakers)
                 term.setTextColor(theme.colors.text_primary)
                 local input = read()
 
-                if string.len(input) > 0 then
-                    state.last_search = input
-                    state.last_search_url = state.api_base_url .. "?v=" .. state.version .. "&search=" .. textutils.urlEncode(input)
-                    http.request(state.last_search_url)
-                    state.search_results = nil
-                    state.search_error = false
-                    state.logger.info("YouTube", "Searching for: " .. input)
+                -- Validate and process input
+                if input and string.len(input) > 0 then
+                    -- Trim whitespace
+                    input = input:match("^%s*(.-)%s*$")
+                    
+                    if string.len(input) > 0 then
+                        -- Validate input length (prevent extremely long URLs that could cause issues)
+                        if string.len(input) > 500 then
+                            state.search_error = true
+                            state.search_results = nil
+                            state.logger.warn("YouTube", "Search input too long (max 500 characters)")
+                        else
+                            -- URL encode the input safely
+                            local success, encodedInput = pcall(textutils.urlEncode, input)
+                            if success and encodedInput then
+                                state.last_search = input
+                                state.last_search_url = state.api_base_url .. "?v=" .. state.version .. "&search=" .. encodedInput
+                                
+                                -- Make HTTP request with error handling
+                                local requestSuccess, requestError = pcall(http.request, state.last_search_url)
+                                if requestSuccess then
+                                    state.search_results = nil
+                                    state.search_error = false
+                                    state.logger.info("YouTube", "Searching for: " .. input)
+                                else
+                                    state.search_error = true
+                                    state.search_results = nil
+                                    state.logger.error("YouTube", "Failed to make search request: " .. tostring(requestError))
+                                end
+                            else
+                                state.search_error = true
+                                state.search_results = nil
+                                state.logger.error("YouTube", "Failed to encode search input")
+                            end
+                        end
+                    else
+                        state.logger.debug("YouTube", "Empty search input after trimming")
+                    end
+                else
+                    state.logger.debug("YouTube", "No search input provided")
                 end
 
                 state.waiting_for_input = false
@@ -622,8 +700,24 @@ function youtubePlayer.httpLoop(state)
 
                 if url == state.last_search_url then
                     local success, results = state.errorHandler.safeExecute(function()
-                        return textutils.unserialiseJSON(handle.readAll())
+                        local responseText = handle.readAll()
+                        if not responseText or responseText == "" then
+                            error("Empty response from search API")
+                        end
+                        
+                        local parseSuccess, data = pcall(textutils.unserialiseJSON, responseText)
+                        if not parseSuccess then
+                            error("Failed to parse JSON response: " .. tostring(data))
+                        end
+                        
+                        if not data or type(data) ~= "table" then
+                            error("Invalid response format from search API")
+                        end
+                        
+                        return data
                     end, "YouTube search response parsing")
+                    
+                    handle.close()
                     
                     if success and results then
                         state.search_results = results
@@ -632,29 +726,41 @@ function youtubePlayer.httpLoop(state)
                     else
                         state.search_results = nil
                         state.search_error = true
-                        state.logger.error("YouTube", "Failed to parse search results")
+                        state.logger.error("YouTube", "Failed to parse search results: " .. tostring(results))
                     end
-                    handle.close()
                     os.queueEvent("redraw_screen")
                 end
                 
                 if url == state.last_download_url then
-                    state.is_loading = false
-                    state.player_handle = handle
-                    state.start = handle.read(4)
-                    state.size = 16 * 1024 - 4
-                    state.playing_status = 1
-                    state.logger.info("YouTube", "Audio stream ready")
+                    local success, error = state.errorHandler.safeExecute(function()
+                        state.is_loading = false
+                        state.player_handle = handle
+                        state.start = handle.read(4)
+                        state.size = 16 * 1024 - 4
+                        state.playing_status = 1
+                        state.logger.info("YouTube", "Audio stream ready")
+                    end, "YouTube audio stream setup")
+                    
+                    if not success then
+                        state.is_loading = false
+                        state.is_error = true
+                        state.playing = false
+                        state.playing_id = nil
+                        handle.close()
+                        state.logger.error("YouTube", "Audio stream setup failed: " .. tostring(error))
+                    end
+                    
                     os.queueEvent("redraw_screen")
                     os.queueEvent("audio_update")
                 end
             end,
             function()
-                local event, url = os.pullEvent("http_failure") 
+                local event, url, errorMsg = os.pullEvent("http_failure") 
 
                 if url == state.last_search_url then
                     state.search_error = true
-                    state.logger.error("YouTube", "Search request failed")
+                    state.search_results = nil
+                    state.logger.error("YouTube", "Search request failed for URL: " .. tostring(url) .. " - " .. tostring(errorMsg))
                     os.queueEvent("redraw_screen")
                 end
                 
@@ -663,7 +769,7 @@ function youtubePlayer.httpLoop(state)
                     state.is_error = true
                     state.playing = false
                     state.playing_id = nil
-                    state.logger.error("YouTube", "Audio stream request failed")
+                    state.logger.error("YouTube", "Audio stream request failed for URL: " .. tostring(url) .. " - " .. tostring(errorMsg))
                     os.queueEvent("redraw_screen")
                     os.queueEvent("audio_update")
                 end
