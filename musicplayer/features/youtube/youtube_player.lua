@@ -1,44 +1,50 @@
 -- YouTube Music Player Feature
--- Enhanced with complete working functionality from original while maintaining modular architecture
+-- Enhanced with proper theme system and components while maintaining working functionality
 
 local youtubeUI = require("musicplayer.ui.layouts.youtube")
+local components = require("musicplayer.ui.components")
 local themes = require("musicplayer.ui.themes")
 
 local youtubePlayer = {}
 
-function youtubePlayer.init(systemState)
-    return {
+function youtubePlayer.init(systemModules)
+    local state = {
+        -- System modules
+        system = systemModules.system,
+        httpClient = systemModules.httpClient,
+        speakerManager = systemModules.speakerManager,
+        errorHandler = systemModules.errorHandler,
+        logger = systemModules.logger,
+        
         -- UI state
         tab = 1,
         width = 0,
         height = 0,
         
-        -- Playback state (from working original)
-        playing = false,
-        volume = 1.5, -- Default volume from working original
-        looping = 0, -- 0 = off, 1 = queue, 2 = song
-        
-        -- Current content
-        now_playing = nil,
-        queue = {},
-        
-        -- Search state (from working original)
-        search_results = nil,
-        search_error = false,
+        -- Search state (using original working approach)
+        waiting_for_input = false,
         last_search = nil,
         last_search_url = nil,
+        search_results = nil,
+        search_error = false,
         in_search_result = false,
         clicked_result = nil,
         
-        -- Loading states
-        is_loading = false,
-        is_error = false,
-        waiting_for_input = false,
+        -- Playback state
+        playing = false,
+        queue = {},
+        now_playing = nil,
+        looping = 0,
+        volume = 1.5,
         
-        -- Audio processing state (from working original)
+        -- Audio state
         playing_id = nil,
         last_download_url = nil,
         playing_status = 0,
+        is_loading = false,
+        is_error = false,
+        
+        -- Audio system
         player_handle = nil,
         start = nil,
         pcm = nil,
@@ -47,129 +53,129 @@ function youtubePlayer.init(systemState)
         needs_next_chunk = 0,
         buffer = nil,
         
-        -- System references
-        system = systemState,
-        httpClient = systemState.httpClient,
-        speakerManager = systemState.speakerManager,
-        errorHandler = systemState.errorHandler,
-        logger = systemState.logger,
-        
         -- API configuration (from working original)
         api_base_url = "https://ipod-2to6magyna-uc.a.run.app/",
         version = "2.1"
     }
+    
+    return state
 end
 
 function youtubePlayer.run(state)
-    -- Initialize screen dimensions
-    state.width, state.height = term.getSize()
+    state.logger.info("YouTube", "Starting YouTube music player")
     
-    -- Get raw speakers for direct access (like working original)
-    local speakers = state.speakerManager.getRawSpeakers()
-    if #speakers == 0 then
-        state.errorHandler.handleError("YouTube", "No speakers attached. You need to connect a speaker to this computer.", 3)
-        return "menu"
-    end
-    
-    -- Run the main loops in parallel (from working original)
-    parallel.waitForAny(
-        function() return youtubePlayer.uiLoop(state, speakers) end,
-        function() return youtubePlayer.audioLoop(state, speakers) end,
-        function() return youtubePlayer.httpLoop(state) end
-    )
-    
-    -- Cleanup
-    youtubePlayer.cleanup(state)
-    return "menu"
-end
-
--- UI Loop (enhanced from working original with our error handling)
-function youtubePlayer.uiLoop(state, speakers)
-    youtubeUI.redrawScreen(state)
-
     while true do
-        if state.waiting_for_input then
-            parallel.waitForAny(
-                function()
-                    local theme = themes.getCurrent()
-                    term.setCursorPos(3, 5) -- Adjusted for header and component layout
-                    term.setBackgroundColor(theme.colors.search_box)
-                    term.setTextColor(theme.colors.text_primary)
-                    local input = read()
-
-                    if string.len(input) > 0 then
-                        state.last_search = input
-                        state.last_search_url = state.api_base_url .. "?v=" .. state.version .. "&search=" .. textutils.urlEncode(input)
-                        http.request(state.last_search_url)
-                        state.search_results = nil
-                        state.search_error = false
-                        state.logger.info("YouTube", "Search requested: " .. input)
-                    else
-                        state.last_search = nil
-                        state.last_search_url = nil
-                        state.search_results = nil
-                        state.search_error = false
-                    end
-
-                    state.waiting_for_input = false
-                    os.queueEvent("redraw_screen")
-                end,
-                function()
-                    while state.waiting_for_input do
-                        local event, button, x, y = os.pullEvent()
-                        -- Handle both mouse_click and monitor_touch
-                        if event == "mouse_click" or event == "monitor_touch" then
-                            if event == "monitor_touch" then
-                                button = 1 -- Treat monitor touch as left click
-                            end
-                            -- Adjusted coordinates for header and component layout
-                            if y ~= 5 or x < 2 or x > state.width-1 then
-                                state.waiting_for_input = false
-                                os.queueEvent("redraw_screen")
-                                break
-                            end
-                        end
-                    end
-                end
-            )
-        else
-            parallel.waitForAny(
-                function()
-                    local event, param1, param2, param3 = os.pullEvent()
-                    -- Handle both mouse_click and monitor_touch
-                    if event == "mouse_click" or event == "monitor_touch" then
-                        local button, x, y
-                        if event == "mouse_click" then
-                            button, x, y = param1, param2, param3
-                        else -- monitor_touch
-                            button, x, y = 1, param2, param3  -- Treat monitor touch as left click
-                        end
-                        return youtubePlayer.handleClick(state, speakers, button, x, y)
-                    end
-                end,
-                function()
-                    local event, param1, param2, param3 = os.pullEvent()
-                    -- Handle both mouse_drag and monitor_drag
-                    if event == "mouse_drag" or event == "monitor_drag" then
-                        local button, x, y
-                        if event == "mouse_drag" then
-                            button, x, y = param1, param2, param3
-                        else -- monitor_drag
-                            button, x, y = 1, param2, param3  -- Treat monitor drag as left drag
-                        end
-                        return youtubePlayer.handleDrag(state, button, x, y)
-                    end
-                end,
-                function()
-                    local event = os.pullEvent("redraw_screen")
-                    youtubeUI.redrawScreen(state)
-                end
-            )
+        -- Update screen dimensions
+        state.width, state.height = term.getSize()
+        
+        -- Draw UI
+        youtubeUI.redrawScreen(state)
+        
+        -- Handle input with proper theme integration
+        local action = youtubePlayer.handleInput(state)
+        
+        if action == "back_to_menu" then
+            youtubePlayer.cleanup(state)
+            return "menu"
+        elseif action == "redraw" then
+            -- Continue loop to redraw
         end
     end
 end
 
--- Handle mouse clicks (from working original with our error handling and coordinate adjustments)
+function youtubePlayer.handleInput(state)
+    if state.waiting_for_input then
+        parallel.waitForAny(
+            function()
+                -- Use original working input handling with theme colors
+                local theme = themes.getCurrent()
+                
+                -- Draw search box with theme colors (original coordinates y=3-5)
+                for y = 3, 5 do
+                    term.setCursorPos(2, y)
+                    term.setBackgroundColor(theme.colors.search_box)
+                    term.clearLine()
+                end
+                
+                term.setCursorPos(3, 4)  -- Original working position
+                term.setBackgroundColor(theme.colors.search_box)
+                term.setTextColor(theme.colors.text_primary)
+                local input = read()
+
+                if string.len(input) > 0 then
+                    state.last_search = input
+                    state.last_search_url = state.api_base_url .. "?v=" .. state.version .. "&search=" .. textutils.urlEncode(input)
+                    http.request(state.last_search_url)
+                    state.search_results = nil
+                    state.search_error = false
+                    state.logger.info("YouTube", "Searching for: " .. input)
+                end
+
+                state.waiting_for_input = false
+            end,
+            function()
+                while true do
+                    local event, url, handle = os.pullEvent("http_success")
+                    if url == state.last_search_url then
+                        local success, results = state.errorHandler.safeExecute(function()
+                            return textutils.unserialiseJSON(handle.readAll())
+                        end, "YouTube search response parsing")
+                        
+                        if success and results then
+                            state.search_results = results
+                            state.search_error = false
+                            state.logger.info("YouTube", "Search completed: " .. #results .. " results")
+                        else
+                            state.search_results = nil
+                            state.search_error = true
+                            state.logger.error("YouTube", "Failed to parse search results")
+                        end
+                        
+                        handle.close()
+                        os.queueEvent("redraw_screen")
+                        break
+                    end
+                end
+            end,
+            function()
+                while true do
+                    local event, url = os.pullEvent("http_failure")
+                    if url == state.last_search_url then
+                        state.search_error = true
+                        state.search_results = nil
+                        state.logger.error("YouTube", "Search request failed")
+                        os.queueEvent("redraw_screen")
+                        break
+                    end
+                end
+            end
+        )
+        return "redraw"
+    end
+    
+    -- Regular input handling
+    parallel.waitForAny(
+        function()
+            while true do
+                local event, param1, param2, param3 = os.pullEvent()
+                -- Handle both mouse_click and monitor_touch
+                if event == "mouse_click" or event == "monitor_touch" then
+                    local button, x, y
+                    if event == "mouse_click" then
+                        button, x, y = param1, param2, param3
+                    else -- monitor_touch
+                        button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+                    end
+                    return youtubePlayer.handleClick(state, {}, button, x, y)
+                elseif event == "redraw_screen" then
+                    return "redraw"
+                end
+            end
+        end,
+        youtubePlayer.createHttpHandler(state)
+    )
+end
+
 function youtubePlayer.handleClick(state, speakers, button, x, y)
     if button == 1 or button == 2 then -- Handle both left and right clicks
         -- Tab clicks (adjusted for header)
@@ -187,33 +193,35 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
         
         -- Search tab handling
         if state.tab == 2 and state.in_search_result == false then
-            -- Search box click (adjusted for header and component layout)
-            if y == 5 and x >= 2 and x <= state.width - 1 then
-                local theme = themes.getCurrent()
-                -- Clear and prepare search input area
-                term.setBackgroundColor(theme.colors.search_box)
-                term.setTextColor(theme.colors.text_primary)
-                term.setCursorPos(2, 5)
-                term.clearLine()
+            -- Search box click (using original working coordinates)
+            if y >= 3 and y <= 5 and x >= 2 and x <= state.width - 1 then
+                -- Use original working search box drawing
+                paintutils.drawFilledBox(2, 3, state.width-1, 5, colors.white)
+                term.setBackgroundColor(colors.white)
+                term.setTextColor(colors.black)
                 state.waiting_for_input = true
                 return
             end
 
-            -- Search result clicks (adjusted for header and component layout)
+            -- Search result clicks (using original working coordinates - 2 lines per result)
             if state.search_results then
                 state.logger.debug("YouTube", "Checking click at (" .. x .. "," .. y .. ") against " .. #state.search_results .. " results")
                 for i=1, #state.search_results do
-                    local resultY = 8 + (i-1) -- This matches components.drawSearchResults positioning
-                    state.logger.debug("YouTube", "Result " .. i .. " at y=" .. resultY)
-                    if y == resultY and resultY < state.height - 2 then
+                    local resultY1 = 7 + (i-1)*2  -- First line of result
+                    local resultY2 = 8 + (i-1)*2  -- Second line of result
+                    state.logger.debug("YouTube", "Result " .. i .. " at y=" .. resultY1 .. "-" .. resultY2)
+                    if (y == resultY1 or y == resultY2) and resultY2 < state.height - 2 then
                         state.logger.info("YouTube", "Clicked on search result " .. i .. ": " .. state.search_results[i].name)
-                        -- Highlight selected result
-                        local theme = themes.getCurrent()
-                        term.setBackgroundColor(theme.colors.button_hover)
-                        term.setTextColor(theme.colors.text_primary)
-                        term.setCursorPos(2, resultY)
+                        -- Highlight selected result (original style)
+                        term.setBackgroundColor(colors.white)
+                        term.setTextColor(colors.black)
+                        term.setCursorPos(2, resultY1)
                         term.clearLine()
                         term.write(state.search_results[i].name)
+                        term.setTextColor(colors.gray)
+                        term.setCursorPos(2, resultY2)
+                        term.clearLine()
+                        term.write(state.search_results[i].artist)
                         sleep(0.2)
                         state.in_search_result = true
                         state.clicked_result = i

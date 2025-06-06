@@ -1,5 +1,5 @@
 -- YouTube Music Player UI Layout
--- Enhanced with proper theme system and component usage
+-- Using our proper theme system and components architecture with working functionality
 
 local components = require("musicplayer.ui.components")
 local themes = require("musicplayer.ui.themes")
@@ -58,7 +58,7 @@ function youtubeUI.drawNowPlaying(state)
     components.drawVolumeSlider(state)
     
     -- Queue using components (adjusted for header and footer)
-    components.drawQueue(state, 2, 11)
+    components.drawQueue(state, 2, 12)
     
     -- Back to menu button using components (adjusted for footer)
     components.drawButton(2, state.height - 3, "Back to Menu", false, true)
@@ -92,54 +92,112 @@ end
 function youtubeUI.drawSearch(state)
     local theme = themes.getCurrent()
     
-    -- Search input using components (adjusted for header)
-    local searchText = state.last_search or ""
-    local placeholder = "Search YouTube or paste URL..."
-    components.drawTextInput(2, 5, state.width - 3, searchText, placeholder, state.waiting_for_input)
+    -- Search input using our themed approach but with original working coordinates
+    youtubeUI.drawSearchInput(state)
 
-    -- Search results using components (adjusted for header)
+    -- Search results using our components but with original working layout
     if state.search_results then
-        components.drawSearchResults(state, 2, 8, 8)
+        youtubeUI.drawSearchResults(state)
     else
-        -- Search status
-        term.setBackgroundColor(theme.colors.background)
-        term.setCursorPos(2, 8)
+        -- Search status using components
         if state.search_error then
-            components.drawStatusIndicator(2, 8, "error", "Search failed - please try again")
+            components.drawStatusIndicator(2, 7, "error", "Search failed - please try again")
         elseif state.last_search_url then
-            components.drawStatusIndicator(2, 8, "loading", "Searching...")
+            components.drawStatusIndicator(2, 7, "loading", "Searching...")
         else
+            term.setBackgroundColor(theme.colors.background)
             term.setTextColor(theme.colors.text_disabled)
+            term.setCursorPos(2, 7)
             term.write("Tip: You can paste YouTube video or playlist links.")
         end
     end
 
-    -- Song action menu (from working original)
+    -- Song action menu using our theme system
     if state.in_search_result then
-        components.clearScreen()
-        
-        -- Redraw header and footer for action menu
-        components.drawHeader(state)
-        components.drawFooter(state)
-        
-        -- Selected song info
-        if state.search_results and state.clicked_result then
-            local selectedSong = state.search_results[state.clicked_result]
-            term.setBackgroundColor(theme.colors.background)
-            term.setTextColor(theme.colors.text_accent)
-            term.setCursorPos(2, 3)
-            term.write("♪ " .. selectedSong.name)
-            term.setTextColor(theme.colors.text_secondary)
-            term.setCursorPos(2, 4)
-            term.write("by " .. selectedSong.artist)
-        end
-
-        -- Action buttons using components
-        components.drawButton(2, 7, "Play now", false, true)
-        components.drawButton(2, 9, "Play next", false, true)
-        components.drawButton(2, 11, "Add to queue", false, true)
-        components.drawButton(2, 14, "Cancel", false, true)
+        youtubeUI.drawSongActionMenu(state)
     end
+end
+
+function youtubeUI.drawSearchInput(state)
+    local theme = themes.getCurrent()
+    
+    -- Draw search box with theme colors but original working coordinates (y=3-5)
+    term.setBackgroundColor(theme.colors.search_box)
+    term.setTextColor(theme.colors.text_primary)
+    
+    -- Draw the search box background (original coordinates)
+    for y = 3, 5 do
+        term.setCursorPos(2, y)
+        term.clearLine()
+        if y == 4 then
+            -- Center line with text
+            term.setCursorPos(3, 4)
+            local displayText = state.last_search or "Search YouTube or paste URL..."
+            if not state.last_search then
+                term.setTextColor(theme.colors.text_disabled)
+            end
+            term.write(displayText)
+        end
+    end
+end
+
+function youtubeUI.drawSearchResults(state)
+    local theme = themes.getCurrent()
+    
+    -- Draw search results with theme colors but original working layout (2 lines per result)
+    term.setBackgroundColor(theme.colors.background)
+    
+    for i = 1, #state.search_results do
+        local result = state.search_results[i]
+        local y1 = 7 + (i-1)*2  -- First line (title)
+        local y2 = 8 + (i-1)*2  -- Second line (artist)
+        
+        -- Don't draw if it would go off screen
+        if y2 >= state.height - 2 then
+            break
+        end
+        
+        -- Song title with theme accent color
+        term.setTextColor(theme.colors.text_primary)
+        term.setCursorPos(2, y1)
+        term.clearLine()
+        term.write(result.name)
+        
+        -- Artist with theme secondary color
+        term.setTextColor(theme.colors.text_secondary)
+        term.setCursorPos(2, y2)
+        term.clearLine()
+        term.write(result.artist)
+    end
+end
+
+function youtubeUI.drawSongActionMenu(state)
+    local theme = themes.getCurrent()
+    
+    -- Clear screen and redraw with theme background
+    components.clearScreen()
+    
+    -- Redraw header and footer for action menu
+    components.drawHeader(state)
+    components.drawFooter(state)
+    
+    -- Selected song info with theme colors
+    if state.search_results and state.clicked_result then
+        local selectedSong = state.search_results[state.clicked_result]
+        term.setBackgroundColor(theme.colors.background)
+        term.setTextColor(theme.colors.text_accent)
+        term.setCursorPos(2, 3)
+        term.write("♪ " .. selectedSong.name)
+        term.setTextColor(theme.colors.text_secondary)
+        term.setCursorPos(2, 4)
+        term.write("by " .. selectedSong.artist)
+    end
+
+    -- Action buttons using our components with original coordinates
+    components.drawButton(2, 6, "Play now", false, true)
+    components.drawButton(2, 8, "Play next", false, true)
+    components.drawButton(2, 10, "Add to queue", false, true)
+    components.drawButton(2, 13, "Cancel", false, true)
 end
 
 return youtubeUI 
