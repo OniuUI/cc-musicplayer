@@ -70,6 +70,7 @@ local function confirmUninstall()
         "startup.lua",
         "uninstall.lua",
         "install.lua",
+        "upgrade.lua",
         "download",
         "version.txt",
         "musicplayer/ (entire folder)",
@@ -125,6 +126,7 @@ local function removeFiles()
 
         -- Install files
         "install.lua",
+        "upgrade.lua",
         "download",
         
         -- Configuration

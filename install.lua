@@ -147,6 +147,7 @@ local files = {
 	-- Core files
 	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
 	{name = "uninstall.lua", url = baseUri .. "uninstall.lua", path = "uninstall.lua"},
+	{name = "upgrade.lua", url = baseUri .. "upgrade.lua", path = "upgrade.lua"},
 	
 	-- Configuration
 	{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
@@ -259,7 +260,8 @@ local features = {
 	"• Enhanced telemetry and logging system",
 	"• Dual-screen support with debug console",
 	"• YouTube search and streaming",
-	"• Network radio functionality"
+	"• Network radio functionality",
+	"• Smart upgrade system (type 'upgrade' to update)"
 }
 
 for i, feature in ipairs(features) do
@@ -298,7 +300,8 @@ local steps = {
 	{text = "3. Connect speakers if needed", color = colors.lightGray},
 	{text = "4. For dual-screen: Connect 2 monitors", color = colors.lightGray},
 	{text = "5. Check logs in musicplayer/logs/", color = colors.lightGray},
-	{text = "6. Enjoy your enhanced music experience!", color = colors.lime}
+	{text = "6. Use 'upgrade' command for future updates", color = colors.lightGray},
+	{text = "7. Enjoy your enhanced music experience!", color = colors.lime}
 }
 
 for i, step in ipairs(steps) do
