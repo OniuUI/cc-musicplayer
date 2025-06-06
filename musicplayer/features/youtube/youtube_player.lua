@@ -225,8 +225,10 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
             return
         elseif state.tab == 1 and state.in_search_result == false then
             -- Now playing tab clicks (adjusted for header)
-            youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
-            return
+            local result = youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
+            if result then
+                return result
+            end
         end
         
         -- Back to menu button (adjusted for footer)
