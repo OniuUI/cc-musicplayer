@@ -6,7 +6,7 @@ local baseUri = "https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/he
 
 -- Upgrade configuration
 local CURRENT_VERSION_FILE = "version.txt"
-local BACKUP_DIR = "musicplayer/backups"
+local BACKUP_DIR = "backups"
 local LOG_FILE = "musicplayer/logs/upgrade.log"
 
 -- Utility functions
