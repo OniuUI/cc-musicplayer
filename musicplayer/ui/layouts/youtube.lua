@@ -1,5 +1,5 @@
 -- YouTube Music Player UI Layout
--- Enhanced with interactive search functionality from working original
+-- Enhanced with proper theme system and component usage
 
 local components = require("musicplayer.ui.components")
 local themes = require("musicplayer.ui.themes")
@@ -14,34 +14,18 @@ function youtubeUI.redrawScreen(state)
         return
     end
 
-    term.setCursorBlink(false)  -- Make sure cursor is off when redrawing
+    term.setCursorBlink(false)
     state.width, state.height = term.getSize()
     
-    -- Clear the screen
-    term.setBackgroundColor(colors.black)
-    term.clear()
+    -- Clear screen with theme background
+    components.clearScreen()
 
     -- Draw header and footer using components
     components.drawHeader(state)
     components.drawFooter(state)
 
-    -- Draw the tabs (adjusted for header)
-    term.setCursorPos(1, 2)
-    term.setBackgroundColor(colors.gray)
-    term.clearLine()
-    
-    for i=1, #TABS, 1 do
-        if state.tab == i then
-            term.setTextColor(colors.black)
-            term.setBackgroundColor(colors.white)
-        else
-            term.setTextColor(colors.white)
-            term.setBackgroundColor(colors.gray)
-        end
-        
-        term.setCursorPos((math.floor((state.width/#TABS)*(i-0.5)))-math.ceil(#TABS[i]/2)+1, 2)
-        term.write(TABS[i])
-    end
+    -- Draw the tabs using components
+    components.drawTabs(state, TABS)
 
     if state.tab == 1 then
         youtubeUI.drawNowPlaying(state)
@@ -51,215 +35,111 @@ function youtubeUI.redrawScreen(state)
 end
 
 function youtubeUI.drawNowPlaying(state)
-    -- Song info (adjusted for header)
-    if state.now_playing ~= nil then
-        term.setBackgroundColor(colors.black)
-        term.setTextColor(colors.white)
-        term.setCursorPos(2, 4)
-        term.write(state.now_playing.name)
-        term.setTextColor(colors.lightGray)
-        term.setCursorPos(2, 5)
-        term.write(state.now_playing.artist)
-    else
-        term.setBackgroundColor(colors.black)
-        term.setTextColor(colors.lightGray)
-        term.setCursorPos(2, 4)
-        term.write("Not playing")
+    local theme = themes.getCurrent()
+    
+    -- Song info using components (adjusted for header)
+    components.drawSongInfo(state, 2, 4)
+
+    -- Status indicators using components
+    if state.is_loading then
+        components.drawStatusIndicator(2, 6, "loading", "Loading...")
+    elseif state.is_error then
+        components.drawStatusIndicator(2, 6, "error", "Network error")
+    elseif state.playing then
+        components.drawStatusIndicator(2, 6, "playing", "Playing")
+    elseif state.now_playing then
+        components.drawStatusIndicator(2, 6, "stopped", "Ready to play")
     end
 
-    -- Status indicators (adjusted for header)
-    if state.is_loading == true then
-        term.setTextColor(colors.gray)
-        term.setBackgroundColor(colors.black)
-        term.setCursorPos(2, 6)
-        term.write("Loading...")
-    elseif state.is_error == true then
-        term.setTextColor(colors.red)
-        term.setBackgroundColor(colors.black)
-        term.setCursorPos(2, 6)
-        term.write("Network error")
-    end
-
-    -- Control buttons (adjusted for header)
+    -- Control buttons using components (adjusted for header)
     youtubeUI.drawControlButtons(state)
     
-    -- Volume slider (adjusted for header)
-    youtubeUI.drawVolumeSlider(state)
+    -- Volume slider using components (adjusted for header)
+    components.drawVolumeSlider(state)
     
-    -- Queue (adjusted for header and footer)
-    if #state.queue > 0 then
-        term.setBackgroundColor(colors.black)
-        for i=1, #state.queue do
-            local queueY = 11 + (i-1)*2
-            -- Make sure we don't draw over the footer
-            if queueY < state.height - 1 then
-                term.setTextColor(colors.white)
-                term.setCursorPos(2, queueY)
-                term.write(state.queue[i].name)
-                term.setTextColor(colors.lightGray)
-                term.setCursorPos(2, queueY + 1)
-                term.write(state.queue[i].artist)
-            end
-        end
-    end
+    -- Queue using components (adjusted for header and footer)
+    components.drawQueue(state, 2, 11)
     
-    -- Back to menu button (adjusted for footer)
-    term.setBackgroundColor(colors.gray)
-    term.setTextColor(colors.white)
-    term.setCursorPos(2, state.height - 3)
-    term.write(" Back to Menu ")
+    -- Back to menu button using components (adjusted for footer)
+    components.drawButton(2, state.height - 3, "Back to Menu", false, true)
 end
 
 function youtubeUI.drawControlButtons(state)
-    term.setTextColor(colors.white)
-    term.setBackgroundColor(colors.gray)
+    local theme = themes.getCurrent()
+    local buttonY = 7 -- Adjusted for header
+    
+    -- Play/Stop button
+    local playText = state.playing and "Stop" or "Play"
+    local playEnabled = state.playing or state.now_playing ~= nil or #state.queue > 0
+    local playActive = state.playing
+    components.drawButton(2, buttonY, playText, playActive, playEnabled)
 
-    -- Play/Stop button (adjusted for header)
-    if state.playing then
-        term.setCursorPos(2, 7)
-        term.write(" Stop ")
-    else
-        if state.now_playing ~= nil or #state.queue > 0 then
-            term.setTextColor(colors.white)
-            term.setBackgroundColor(colors.gray)
-        else
-            term.setTextColor(colors.lightGray)
-            term.setBackgroundColor(colors.gray)
-        end
-        term.setCursorPos(2, 7)
-        term.write(" Play ")
-    end
+    -- Skip button
+    local skipEnabled = state.now_playing ~= nil or #state.queue > 0
+    components.drawButton(9, buttonY, "Skip", false, skipEnabled)
 
-    -- Skip button (adjusted for header)
-    if state.now_playing ~= nil or #state.queue > 0 then
-        term.setTextColor(colors.white)
-        term.setBackgroundColor(colors.gray)
-    else
-        term.setTextColor(colors.lightGray)
-        term.setBackgroundColor(colors.gray)
+    -- Loop button
+    local loopText = "Loop Off"
+    if state.looping == 1 then
+        loopText = "Loop Queue"
+    elseif state.looping == 2 then
+        loopText = "Loop Song"
     end
-    term.setCursorPos(2 + 7, 7)
-    term.write(" Skip ")
-
-    -- Loop button (adjusted for header)
-    if state.looping ~= 0 then
-        term.setTextColor(colors.black)
-        term.setBackgroundColor(colors.white)
-    else
-        term.setTextColor(colors.white)
-        term.setBackgroundColor(colors.gray)
-    end
-    term.setCursorPos(2 + 7 + 7, 7)
-    if state.looping == 0 then
-        term.write(" Loop Off ")
-    elseif state.looping == 1 then
-        term.write(" Loop Queue ")
-    else
-        term.write(" Loop Song ")
-    end
-end
-
-function youtubeUI.drawVolumeSlider(state)
-    -- Volume slider (adjusted for header)
-    term.setCursorPos(2, 9)
-    paintutils.drawBox(2, 9, 25, 9, colors.gray)
-    local width = math.floor(24 * (state.volume / 3) + 0.5) - 1
-    if not (width == -1) then
-        paintutils.drawBox(2, 9, 2 + width, 9, colors.white)
-    end
-    if state.volume < 0.6 then
-        term.setCursorPos(2 + width + 2, 9)
-        term.setBackgroundColor(colors.gray)
-        term.setTextColor(colors.white)
-    else
-        term.setCursorPos(2 + width - 3 - (state.volume == 3 and 1 or 0), 9)
-        term.setBackgroundColor(colors.white)
-        term.setTextColor(colors.black)
-    end
-    term.write(math.floor(100 * (state.volume / 3) + 0.5) .. "%")
+    local loopActive = state.looping ~= 0
+    components.drawButton(16, buttonY, loopText, loopActive, true)
 end
 
 function youtubeUI.drawSearch(state)
-    -- Search bar (adjusted for header)
-    paintutils.drawFilledBox(2, 4, state.width-1, 6, colors.lightGray)
-    term.setBackgroundColor(colors.lightGray)
-    term.setCursorPos(3, 5)
-    term.setTextColor(colors.black)
-    term.write(state.last_search or "Search...")
+    local theme = themes.getCurrent()
+    
+    -- Search input using components (adjusted for header)
+    local searchText = state.last_search or ""
+    local placeholder = "Search YouTube or paste URL..."
+    components.drawTextInput(2, 5, state.width - 3, searchText, placeholder, state.waiting_for_input)
 
-    -- Search results (adjusted for header)
-    if state.search_results ~= nil then
-        term.setBackgroundColor(colors.black)
-        for i=1, #state.search_results do
-            local resultY = 8 + (i-1)*2
-            -- Make sure we don't draw over the footer
-            if resultY < state.height - 1 then
-                term.setTextColor(colors.white)
-                term.setCursorPos(2, resultY)
-                term.write(state.search_results[i].name)
-                term.setTextColor(colors.lightGray)
-                term.setCursorPos(2, resultY + 1)
-                term.write(state.search_results[i].artist)
-            end
-        end
+    -- Search results using components (adjusted for header)
+    if state.search_results then
+        components.drawSearchResults(state, 2, 8, 8)
     else
+        -- Search status
+        term.setBackgroundColor(theme.colors.background)
         term.setCursorPos(2, 8)
-        term.setBackgroundColor(colors.black)
-        if state.search_error == true then
-            term.setTextColor(colors.red)
-            term.write("Network error")
-        elseif state.last_search_url ~= nil then
-            term.setTextColor(colors.lightGray)
-            term.write("Searching...")
+        if state.search_error then
+            components.drawStatusIndicator(2, 8, "error", "Search failed - please try again")
+        elseif state.last_search_url then
+            components.drawStatusIndicator(2, 8, "loading", "Searching...")
         else
-            term.setCursorPos(1, 8)
-            term.setTextColor(colors.lightGray)
-            print("Tip: You can paste YouTube video or playlist links.")
+            term.setTextColor(theme.colors.text_disabled)
+            term.write("Tip: You can paste YouTube video or playlist links.")
         end
     end
 
     -- Song action menu (from working original)
-    if state.in_search_result == true then
-        term.setBackgroundColor(colors.black)
-        term.clear()
+    if state.in_search_result then
+        components.clearScreen()
         
         -- Redraw header and footer for action menu
         components.drawHeader(state)
         components.drawFooter(state)
         
-        term.setCursorPos(2, 3)
-        term.setTextColor(colors.white)
-        term.write(state.search_results[state.clicked_result].name)
-        term.setCursorPos(2, 4)
-        term.setTextColor(colors.lightGray)
-        term.write(state.search_results[state.clicked_result].artist)
+        -- Selected song info
+        if state.search_results and state.clicked_result then
+            local selectedSong = state.search_results[state.clicked_result]
+            term.setBackgroundColor(theme.colors.background)
+            term.setTextColor(theme.colors.text_accent)
+            term.setCursorPos(2, 3)
+            term.write("♪ " .. selectedSong.name)
+            term.setTextColor(theme.colors.text_secondary)
+            term.setCursorPos(2, 4)
+            term.write("by " .. selectedSong.artist)
+        end
 
-        term.setBackgroundColor(colors.gray)
-        term.setTextColor(colors.white)
-
-        term.setCursorPos(2, 7)
-        term.clearLine()
-        term.write("Play now")
-
-        term.setCursorPos(2, 9)
-        term.clearLine()
-        term.write("Play next")
-
-        term.setCursorPos(2, 11)
-        term.clearLine()
-        term.write("Add to queue")
-
-        term.setCursorPos(2, 14)
-        term.clearLine()
-        term.write("Cancel")
+        -- Action buttons using components
+        components.drawButton(2, 7, "Play now", false, true)
+        components.drawButton(2, 9, "Play next", false, true)
+        components.drawButton(2, 11, "Add to queue", false, true)
+        components.drawButton(2, 14, "Cancel", false, true)
     end
-end
-
--- Enhanced search input handling (keeping our modular approach but with working functionality)
-function youtubeUI.handleSearchInput(state, youtubePlayer)
-    -- This function is called when search input is needed
-    -- The actual input handling is done in the YouTube player's UI loop
-    state.waiting_for_input = true
 end
 
 return youtubeUI 

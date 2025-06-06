@@ -2,6 +2,7 @@
 -- Enhanced with complete working functionality from original while maintaining modular architecture
 
 local youtubeUI = require("musicplayer.ui.layouts.youtube")
+local themes = require("musicplayer.ui.themes")
 
 local youtubePlayer = {}
 
@@ -90,9 +91,10 @@ function youtubePlayer.uiLoop(state, speakers)
         if state.waiting_for_input then
             parallel.waitForAny(
                 function()
-                    term.setCursorPos(3, 5) -- Adjusted for header
-                    term.setBackgroundColor(colors.white)
-                    term.setTextColor(colors.black)
+                    local theme = themes.getCurrent()
+                    term.setCursorPos(3, 5) -- Adjusted for header and component layout
+                    term.setBackgroundColor(theme.colors.search_box)
+                    term.setTextColor(theme.colors.text_primary)
                     local input = read()
 
                     if string.len(input) > 0 then
@@ -120,8 +122,8 @@ function youtubePlayer.uiLoop(state, speakers)
                             if event == "monitor_touch" then
                                 button = 1 -- Treat monitor touch as left click
                             end
-                            -- Adjusted coordinates for header
-                            if y < 4 or y > 6 or x < 2 or x > state.width-1 then
+                            -- Adjusted coordinates for header and component layout
+                            if y ~= 5 or x < 2 or x > state.width-1 then
                                 state.waiting_for_input = false
                                 os.queueEvent("redraw_screen")
                                 break
@@ -185,29 +187,30 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
         
         -- Search tab handling
         if state.tab == 2 and state.in_search_result == false then
-            -- Search box click (adjusted for header)
-            if y >= 4 and y <= 6 and x >= 1 and x <= state.width-1 then
-                paintutils.drawFilledBox(2, 4, state.width-1, 6, colors.white)
-                term.setBackgroundColor(colors.white)
+            -- Search box click (adjusted for header and component layout)
+            if y == 5 and x >= 2 and x <= state.width - 1 then
+                local theme = themes.getCurrent()
+                -- Clear and prepare search input area
+                term.setBackgroundColor(theme.colors.search_box)
+                term.setTextColor(theme.colors.text_primary)
+                term.setCursorPos(2, 5)
+                term.clearLine()
                 state.waiting_for_input = true
                 return
             end
 
-            -- Search result clicks (adjusted for header)
+            -- Search result clicks (adjusted for header and component layout)
             if state.search_results then
                 for i=1, #state.search_results do
-                    local resultY = 8 + (i-1)*2
-                    if (y == resultY or y == resultY + 1) and resultY < state.height - 1 then
+                    local resultY = 8 + (i-1)
+                    if y == resultY and resultY < state.height - 2 then
                         -- Highlight selected result
-                        term.setBackgroundColor(colors.white)
-                        term.setTextColor(colors.black)
+                        local theme = themes.getCurrent()
+                        term.setBackgroundColor(theme.colors.button_hover)
+                        term.setTextColor(theme.colors.text_primary)
                         term.setCursorPos(2, resultY)
                         term.clearLine()
                         term.write(state.search_results[i].name)
-                        term.setTextColor(colors.gray)
-                        term.setCursorPos(2, resultY + 1)
-                        term.clearLine()
-                        term.write(state.search_results[i].artist)
                         sleep(0.2)
                         state.in_search_result = true
                         state.clicked_result = i
@@ -320,14 +323,15 @@ function youtubePlayer.handleSongActionClick(state, speakers, y)
     youtubeUI.redrawScreen(state)
 end
 
--- Handle now playing clicks (adjusted for header)
+-- Handle now playing clicks (adjusted for header and new component layout)
 function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
     if y == 7 then -- Control buttons row (adjusted for header)
-        -- Play/stop button
-        if x >= 2 and x < 2 + 6 then
+        -- Play/stop button (new position from components)
+        if x >= 2 and x <= 7 then -- "Play" or "Stop" button
             if state.playing or state.now_playing ~= nil or #state.queue > 0 then
-                term.setBackgroundColor(colors.white)
-                term.setTextColor(colors.black)
+                local theme = themes.getCurrent()
+                term.setBackgroundColor(theme.colors.button_active)
+                term.setTextColor(theme.colors.background)
                 term.setCursorPos(2, 7)
                 if state.playing then
                     term.write(" Stop ")
@@ -365,12 +369,13 @@ function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
             end
         end
 
-        -- Skip button
-        if x >= 2 + 7 and x < 2 + 7 + 6 then
+        -- Skip button (new position from components)
+        if x >= 9 and x <= 14 then -- "Skip" button
             if state.now_playing ~= nil or #state.queue > 0 then
-                term.setBackgroundColor(colors.white)
-                term.setTextColor(colors.black)
-                term.setCursorPos(2 + 7, 7)
+                local theme = themes.getCurrent()
+                term.setBackgroundColor(theme.colors.button_active)
+                term.setTextColor(theme.colors.background)
+                term.setCursorPos(9, 7)
                 term.write(" Skip ")
                 sleep(0.2)
 
@@ -402,8 +407,8 @@ function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
             end
         end
 
-        -- Loop button
-        if x >= 2 + 7 + 7 and x < 2 + 7 + 7 + 12 then
+        -- Loop button (new position from components)
+        if x >= 16 and x <= 27 then -- "Loop Off/Queue/Song" button
             if state.looping == 0 then
                 state.looping = 1
             elseif state.looping == 1 then
@@ -416,29 +421,39 @@ function youtubePlayer.handleNowPlayingClick(state, speakers, x, y)
         end
     end
 
-    if y == 9 then -- Volume slider row (adjusted for header)
-        -- Volume slider
-        if x >= 1 and x < 2 + 24 then
-            state.volume = (x - 1) / 24 * 3
+    -- Volume slider handling (using component position)
+    if y >= 10 and y <= 11 then -- Volume slider area (adjusted for header and component position)
+        if x >= 3 and x <= 23 then -- Volume slider range
+            local sliderWidth = 20
+            local newVolume = ((x - 3) / sliderWidth) * 3.0
+            state.volume = math.max(0, math.min(3.0, newVolume))
             state.speakerManager.setVolume(state.volume)
-            state.logger.debug("YouTube", "Volume set to " .. math.floor(state.volume * 100) .. "%")
+            state.logger.debug("YouTube", "Volume set to " .. math.floor((state.volume / 3.0) * 100) .. "%")
         end
+    end
+
+    -- Back to menu button (using component position)
+    if y == state.height - 3 and x >= 2 and x <= 15 then
+        return "back_to_menu"
     end
 
     youtubeUI.redrawScreen(state)
 end
 
--- Handle mouse drag (adjusted for header)
+-- Handle mouse drag (adjusted for header and component layout)
 function youtubePlayer.handleDrag(state, button, x, y)
     if button == 1 and state.tab == 1 and state.in_search_result == false then
-        if y >= 8 and y <= 10 then -- Volume slider area (adjusted for header)
-            -- Volume slider
-            if x >= 1 and x < 2 + 24 then
-                state.volume = (x - 1) / 24 * 3
+        -- Volume slider area (adjusted for header and component position)
+        if y >= 10 and y <= 11 then -- Volume slider area from components
+            if x >= 3 and x <= 23 then -- Volume slider range
+                local sliderWidth = 20
+                local newVolume = ((x - 3) / sliderWidth) * 3.0
+                state.volume = math.max(0, math.min(3.0, newVolume))
                 state.speakerManager.setVolume(state.volume)
+                state.logger.debug("YouTube", "Volume dragged to " .. math.floor((state.volume / 3.0) * 100) .. "%")
             end
+            youtubeUI.redrawScreen(state)
         end
-        youtubeUI.redrawScreen(state)
     end
 end
 
