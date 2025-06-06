@@ -142,6 +142,9 @@ local function getFileList()
         {name = "uninstall.lua", url = baseUri .. "uninstall.lua", path = "uninstall.lua"},
         {name = "upgrade.lua", url = baseUri .. "upgrade.lua", path = "upgrade.lua"},
         
+        -- Configuration
+        {name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
+        
         -- Core system modules
         {name = "system.lua", url = baseUri .. "musicplayer/core/system.lua", path = "musicplayer/core/system.lua"},
         
