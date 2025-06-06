@@ -171,7 +171,7 @@ end
 
 -- Handle mouse clicks (from working original with our error handling and coordinate adjustments)
 function youtubePlayer.handleClick(state, speakers, button, x, y)
-    if button == 1 then
+    if button == 1 or button == 2 then -- Handle both left and right clicks
         -- Tab clicks (adjusted for header)
         if state.in_search_result == false then
             if y == 2 then -- Tab row is now at y=2
@@ -201,9 +201,12 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
 
             -- Search result clicks (adjusted for header and component layout)
             if state.search_results then
+                state.logger.debug("YouTube", "Checking click at (" .. x .. "," .. y .. ") against " .. #state.search_results .. " results")
                 for i=1, #state.search_results do
-                    local resultY = 8 + (i-1)
+                    local resultY = 8 + (i-1) -- This matches components.drawSearchResults positioning
+                    state.logger.debug("YouTube", "Result " .. i .. " at y=" .. resultY)
                     if y == resultY and resultY < state.height - 2 then
+                        state.logger.info("YouTube", "Clicked on search result " .. i .. ": " .. state.search_results[i].name)
                         -- Highlight selected result
                         local theme = themes.getCurrent()
                         term.setBackgroundColor(theme.colors.button_hover)
@@ -218,6 +221,7 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
                         return
                     end
                 end
+                state.logger.debug("YouTube", "No search result matched click coordinates")
             end
         elseif state.tab == 2 and state.in_search_result == true then
             -- Song action menu clicks (adjusted for header)
@@ -240,8 +244,9 @@ end
 
 -- Handle song action menu clicks (adjusted for header)
 function youtubePlayer.handleSongActionClick(state, speakers, y)
-    term.setBackgroundColor(colors.white)
-    term.setTextColor(colors.black)
+    local theme = themes.getCurrent()
+    term.setBackgroundColor(theme.colors.button_active)
+    term.setTextColor(theme.colors.background)
 
     if y == 7 then -- Play now (adjusted for header)
         term.setCursorPos(2, 7)
@@ -322,7 +327,8 @@ function youtubePlayer.handleSongActionClick(state, speakers, y)
         state.in_search_result = false
     end
 
-    youtubeUI.redrawScreen(state)
+    -- Force a complete redraw to return to search results
+    os.queueEvent("redraw_screen")
 end
 
 -- Handle now playing clicks (adjusted for header and new component layout)
@@ -615,13 +621,16 @@ function youtubePlayer.httpLoop(state)
                         return textutils.unserialiseJSON(handle.readAll())
                     end, "YouTube search response parsing")
                     
-                    if success then
+                    if success and results then
                         state.search_results = results
+                        state.search_error = false -- Clear any previous search errors
                         state.logger.info("YouTube", "Search completed: " .. #results .. " results")
                     else
+                        state.search_results = nil
                         state.search_error = true
                         state.logger.error("YouTube", "Failed to parse search results")
                     end
+                    handle.close()
                     os.queueEvent("redraw_screen")
                 end
                 
