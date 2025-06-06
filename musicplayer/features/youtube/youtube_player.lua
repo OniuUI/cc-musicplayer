@@ -64,26 +64,48 @@ end
 function youtubePlayer.run(state)
     state.logger.info("YouTube", "Starting YouTube music player")
     
+    -- Initialize screen dimensions
+    state.width, state.height = term.getSize()
+    
+    -- Get raw speakers for direct access (like working original)
+    local speakers = state.speakerManager.getRawSpeakers()
+    if #speakers == 0 then
+        state.errorHandler.handleError("YouTube", "No speakers attached. You need to connect a speaker to this computer.", 3)
+        return "menu"
+    end
+    
+    -- Run the main loops in parallel (from working original)
+    parallel.waitForAny(
+        function() return youtubePlayer.uiLoop(state, speakers) end,
+        function() return youtubePlayer.audioLoop(state, speakers) end,
+        function() return youtubePlayer.httpLoop(state) end
+    )
+    
+    -- Cleanup
+    youtubePlayer.cleanup(state)
+    return "menu"
+end
+
+-- UI Loop (enhanced from working original with our error handling)
+function youtubePlayer.uiLoop(state, speakers)
+    youtubeUI.redrawScreen(state)
+
     while true do
         -- Update screen dimensions
         state.width, state.height = term.getSize()
         
-        -- Draw UI
-        youtubeUI.redrawScreen(state)
-        
         -- Handle input with proper theme integration
-        local action = youtubePlayer.handleInput(state)
+        local action = youtubePlayer.handleInput(state, speakers)
         
         if action == "back_to_menu" then
-            youtubePlayer.cleanup(state)
             return "menu"
         elseif action == "redraw" then
-            -- Continue loop to redraw
+            youtubeUI.redrawScreen(state)
         end
     end
 end
 
-function youtubePlayer.handleInput(state)
+function youtubePlayer.handleInput(state, speakers)
     if state.waiting_for_input then
         parallel.waitForAny(
             function()
@@ -112,38 +134,14 @@ function youtubePlayer.handleInput(state)
                 end
 
                 state.waiting_for_input = false
+                os.queueEvent("redraw_screen")
             end,
             function()
-                while true do
-                    local event, url, handle = os.pullEvent("http_success")
-                    if url == state.last_search_url then
-                        local success, results = state.errorHandler.safeExecute(function()
-                            return textutils.unserialiseJSON(handle.readAll())
-                        end, "YouTube search response parsing")
-                        
-                        if success and results then
-                            state.search_results = results
-                            state.search_error = false
-                            state.logger.info("YouTube", "Search completed: " .. #results .. " results")
-                        else
-                            state.search_results = nil
-                            state.search_error = true
-                            state.logger.error("YouTube", "Failed to parse search results")
-                        end
-                        
-                        handle.close()
-                        os.queueEvent("redraw_screen")
-                        break
-                    end
-                end
-            end,
-            function()
-                while true do
-                    local event, url = os.pullEvent("http_failure")
-                    if url == state.last_search_url then
-                        state.search_error = true
-                        state.search_results = nil
-                        state.logger.error("YouTube", "Search request failed")
+                while state.waiting_for_input do
+                    local event, button, x, y = os.pullEvent("mouse_click")
+                    -- Use original working coordinates for click-outside detection
+                    if y < 3 or y > 5 or x < 2 or x > state.width-1 then
+                        state.waiting_for_input = false
                         os.queueEvent("redraw_screen")
                         break
                     end
@@ -154,26 +152,24 @@ function youtubePlayer.handleInput(state)
     end
     
     -- Regular input handling
-    parallel.waitForAny(
-        function()
-            while true do
-                local event, param1, param2, param3 = os.pullEvent()
-                -- Handle both mouse_click and monitor_touch
-                if event == "mouse_click" or event == "monitor_touch" then
-                    local button, x, y
-                    if event == "mouse_click" then
-                        button, x, y = param1, param2, param3
-                    else -- monitor_touch
-                        button, x, y = 1, param2, param3  -- Treat monitor touch as left click
-                    end
-                    return youtubePlayer.handleClick(state, {}, button, x, y)
-                elseif event == "redraw_screen" then
-                    return "redraw"
-                end
+    while true do
+        local event, param1, param2, param3 = os.pullEvent()
+        -- Handle both mouse_click and monitor_touch
+        if event == "mouse_click" or event == "monitor_touch" then
+            local button, x, y
+            if event == "mouse_click" then
+                button, x, y = param1, param2, param3
+            else -- monitor_touch
+                button, x, y = 1, param2, param3  -- Treat monitor touch as left click
             end
-        end,
-        youtubePlayer.createHttpHandler(state)
-    )
+            local result = youtubePlayer.handleClick(state, speakers, button, x, y)
+            if result then
+                return result
+            end
+        elseif event == "redraw_screen" then
+            return "redraw"
+        end
+    end
 end
 
 function youtubePlayer.handleClick(state, speakers, button, x, y)
