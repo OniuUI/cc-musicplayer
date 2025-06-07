@@ -145,8 +145,11 @@ function youtubePlayer.uiLoop(state, speakers)
                         end
 
                         if button == 1 then
+                            state.logger.debug("YouTube", "Click at (" .. x .. "," .. y .. ") - screen size: " .. state.width .. "x" .. state.height)
+                            
                             -- Back to menu button (FIRST CHECK) - adjusted for modern UI
-                            if y == state.height - 3 and x >= 2 and x <= 17 then
+                            -- The button is drawn at (2, state.height - 3) with text " Back to Menu "
+                            if y == state.height - 3 and x >= 2 and x <= 16 then
                                 state.logger.info("YouTube", "Back to menu clicked")
                                 return "menu"
                             end
@@ -180,32 +183,39 @@ function youtubePlayer.uiLoop(state, speakers)
                                 -- Search result click (original coordinates still work)
                                 if state.search_results then
                                     for i=1,#state.search_results do
-                                        if y == 7 + (i-1)*2 or y == 8 + (i-1)*2 then
+                                        local resultY1 = 7 + (i-1)*2
+                                        local resultY2 = 8 + (i-1)*2
+                                        if y == resultY1 or y == resultY2 then
+                                            state.logger.info("YouTube", "Clicked on search result " .. i .. ": " .. state.search_results[i].name)
                                             -- Use modern themed selection highlight
                                             local theme = themes.getCurrent()
                                             term.setBackgroundColor(theme.colors.button_active)
                                             term.setTextColor(theme.colors.background)
-                                            term.setCursorPos(2,7 + (i-1)*2)
+                                            term.setCursorPos(2, resultY1)
                                             term.clearLine()
                                             term.write(state.search_results[i].name)
                                             term.setTextColor(theme.colors.text_secondary)
-                                            term.setCursorPos(2,8 + (i-1)*2)
+                                            term.setCursorPos(2, resultY2)
                                             term.clearLine()
                                             term.write(state.search_results[i].artist)
                                             sleep(0.2)
                                             state.in_search_result = true
                                             state.clicked_result = i
+                                            state.logger.info("YouTube", "Setting in_search_result = true, clicked_result = " .. i)
                                             youtubeUI.redrawScreen(state)
+                                            break
                                         end
                                     end
                                 end
                             elseif state.tab == 2 and state.in_search_result == true then
                                 -- Search result menu clicks (original coordinates still work)
+                                state.logger.info("YouTube", "In song action menu, clicked at (" .. x .. "," .. y .. ")")
                                 local theme = themes.getCurrent()
                                 term.setBackgroundColor(theme.colors.button_active)
                                 term.setTextColor(theme.colors.background)
             
                                 if y == 6 then
+                                    state.logger.info("YouTube", "Play now button clicked")
                                     term.setCursorPos(2,6)
                                     term.clearLine()
                                     term.write("Play now")
@@ -234,6 +244,7 @@ function youtubePlayer.uiLoop(state, speakers)
                                 end
             
                                 if y == 8 then
+                                    state.logger.info("YouTube", "Play next button clicked")
                                     term.setCursorPos(2,8)
                                     term.clearLine()
                                     term.write("Play next")
@@ -251,6 +262,7 @@ function youtubePlayer.uiLoop(state, speakers)
                                 end
             
                                 if y == 10 then
+                                    state.logger.info("YouTube", "Add to queue button clicked")
                                     term.setCursorPos(2,10)
                                     term.clearLine()
                                     term.write("Add to queue")
@@ -268,6 +280,7 @@ function youtubePlayer.uiLoop(state, speakers)
                                 end
             
                                 if y == 13 then
+                                    state.logger.info("YouTube", "Cancel button clicked")
                                     term.setCursorPos(2,13)
                                     term.clearLine()
                                     term.write("Cancel")

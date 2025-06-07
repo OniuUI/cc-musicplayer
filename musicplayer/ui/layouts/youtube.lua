@@ -174,6 +174,11 @@ end
 function youtubeUI.drawSongActionMenu(state)
     local theme = themes.getCurrent()
     
+    -- Debug logging
+    if state.logger then
+        state.logger.info("YouTube", "Drawing song action menu for result " .. (state.clicked_result or "nil"))
+    end
+    
     -- Clear screen and redraw with theme background
     components.clearScreen()
     
@@ -198,6 +203,9 @@ function youtubeUI.drawSongActionMenu(state)
     components.drawButton(2, 8, "Play next", false, true)
     components.drawButton(2, 10, "Add to queue", false, true)
     components.drawButton(2, 13, "Cancel", false, true)
+    
+    -- Back to menu button (should still be available in action menu)
+    components.drawButton(2, state.height - 3, "Back to Menu", false, true)
 end
 
 return youtubeUI 
