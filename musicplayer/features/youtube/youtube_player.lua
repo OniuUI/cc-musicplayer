@@ -22,6 +22,10 @@ function youtubePlayer.init(systemModules)
         in_search_result = false,
         clicked_result = nil,
         
+        -- Pagination support
+        current_page = 1,
+        results_per_page = 5,
+        
         playing = false,
         queue = {},
         now_playing = nil,
@@ -218,7 +222,8 @@ function youtubePlayer.redrawScreen(state)
     term.setCursorPos(2, state.height - 1)
     term.write(" ← Back to Menu ")
     
-    -- Rainbow "Developed by Forty" footer
+    -- Rainbow "Developed by Forty" footer with gray background
+    term.setBackgroundColor(colors.gray)
     local devText = "Developed by Forty"
     local footerX = math.floor((state.width - #devText) / 2) + 1
     term.setCursorPos(footerX, state.height)
@@ -392,19 +397,28 @@ function youtubePlayer.drawSearch(state)
     end
     term.write(displayText)
 
-    -- Search results with beautiful styling and contrasting colors
-    if state.search_results then
+    -- Search results with pagination
+    if state.search_results and #state.search_results > 0 then
+        -- Calculate pagination
+        local totalResults = #state.search_results
+        local totalPages = math.ceil(totalResults / state.results_per_page)
+        local startIndex = (state.current_page - 1) * state.results_per_page + 1
+        local endIndex = math.min(startIndex + state.results_per_page - 1, totalResults)
+        
+        -- Results header with pagination info
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.yellow)
         term.setCursorPos(3, 11)
-        term.write("Results (" .. #state.search_results .. " found):")
+        term.write("Results (" .. totalResults .. " found) - Page " .. state.current_page .. "/" .. totalPages)
         
-        for i = 1, #state.search_results do
+        -- Display current page results
+        for i = startIndex, endIndex do
             local result = state.search_results[i]
-            local y1 = 12 + (i-1)*3  -- More spacing for better look
-            local y2 = 13 + (i-1)*3
+            local displayIndex = i - startIndex + 1
+            local y1 = 12 + (displayIndex-1)*3  -- Title line
+            local y2 = 13 + (displayIndex-1)*3  -- Artist line
             
-            if y2 >= state.height - 3 then break end
+            if y2 >= state.height - 5 then break end
             
             -- Beautiful result styling with contrasting colors
             term.setBackgroundColor(colors.lightBlue)
@@ -427,6 +441,45 @@ function youtubePlayer.drawSearch(state)
                 term.write("[Playlist]")
             end
         end
+        
+        -- Pagination controls
+        if totalPages > 1 then
+            local controlsY = state.height - 3
+            term.setBackgroundColor(colors.black)
+            
+            -- Previous button
+            if state.current_page > 1 then
+                term.setBackgroundColor(colors.cyan)
+                term.setTextColor(colors.black)
+                term.setCursorPos(3, controlsY)
+                term.write(" ← Prev ")
+            else
+                term.setBackgroundColor(colors.gray)
+                term.setTextColor(colors.lightGray)
+                term.setCursorPos(3, controlsY)
+                term.write(" ← Prev ")
+            end
+            
+            -- Page info
+            term.setBackgroundColor(colors.black)
+            term.setTextColor(colors.white)
+            term.setCursorPos(13, controlsY)
+            term.write("Page " .. state.current_page .. "/" .. totalPages)
+            
+            -- Next button
+            if state.current_page < totalPages then
+                term.setBackgroundColor(colors.cyan)
+                term.setTextColor(colors.black)
+                term.setCursorPos(state.width - 10, controlsY)
+                term.write(" Next → ")
+            else
+                term.setBackgroundColor(colors.gray)
+                term.setTextColor(colors.lightGray)
+                term.setCursorPos(state.width - 10, controlsY)
+                term.write(" Next → ")
+            end
+        end
+        
     else
         -- Search status with beautiful colors and yellow accents
         term.setBackgroundColor(colors.black)
@@ -471,11 +524,13 @@ function youtubePlayer.uiLoop(state, speakers)
                         http.request(state.last_search_url)
                         state.search_results = nil
                         state.search_error = false
+                        state.current_page = 1  -- Reset pagination for new search
                     else
                         state.last_search = nil
                         state.last_search_url = nil
                         state.search_results = nil
                         state.search_error = false
+                        state.current_page = 1  -- Reset pagination
                     end
 
                     state.waiting_for_input = false
@@ -555,11 +610,35 @@ function youtubePlayer.uiLoop(state, speakers)
                                     state.waiting_for_input = true
                                 end
             
-                                -- Search result click (updated coordinates)
-                                if state.search_results then
-                                    for i=1,#state.search_results do
-                                        local resultY1 = 12 + (i-1)*3  -- Title line
-                                        local resultY2 = 13 + (i-1)*3  -- Artist line
+                                -- Pagination controls
+                                if state.search_results and #state.search_results > 0 then
+                                    local totalPages = math.ceil(#state.search_results / state.results_per_page)
+                                    local controlsY = state.height - 3
+                                    
+                                    -- Previous button click
+                                    if y == controlsY and x >= 3 and x <= 11 and state.current_page > 1 then
+                                        state.current_page = state.current_page - 1
+                                        youtubePlayer.redrawScreen(state)
+                                        return
+                                    end
+                                    
+                                    -- Next button click
+                                    if y == controlsY and x >= state.width - 10 and x <= state.width - 2 and state.current_page < totalPages then
+                                        state.current_page = state.current_page + 1
+                                        youtubePlayer.redrawScreen(state)
+                                        return
+                                    end
+                                end
+            
+                                -- Search result click (updated coordinates with pagination)
+                                if state.search_results and #state.search_results > 0 then
+                                    local startIndex = (state.current_page - 1) * state.results_per_page + 1
+                                    local endIndex = math.min(startIndex + state.results_per_page - 1, #state.search_results)
+                                    
+                                    for i = startIndex, endIndex do
+                                        local displayIndex = i - startIndex + 1
+                                        local resultY1 = 12 + (displayIndex-1)*3  -- Title line
+                                        local resultY2 = 13 + (displayIndex-1)*3  -- Artist line
                                         
                                         if y == resultY1 or y == resultY2 then
                                             -- Visual feedback
@@ -574,7 +653,7 @@ function youtubePlayer.uiLoop(state, speakers)
                                             term.write(state.search_results[i].artist)
                                             sleep(0.2)
                                             
-                                            -- Set state
+                                            -- Set state (use actual index i, not display index)
                                             state.in_search_result = true
                                             state.clicked_result = i
                                             
@@ -907,10 +986,12 @@ function youtubePlayer.httpLoop(state)
                     if success and results then
                         state.search_results = results
                         state.search_error = false
-                        state.logger.info("YouTube", "Search completed: " .. #results .. " results")
+                        state.current_page = 1  -- Reset to first page for new results
+                        state.logger.info("YouTube", "Search completed: " .. #results .. " results found")
                     else
                         state.search_results = nil
                         state.search_error = true
+                        state.current_page = 1
                         state.logger.error("YouTube", "Failed to parse search results")
                     end
                     os.queueEvent("redraw_screen")

@@ -142,7 +142,6 @@ local function removeFiles()
         "musicplayer/audio/speaker_manager.lua",
         "musicplayer/ui/themes.lua",
         "musicplayer/ui/components.lua",
-        "musicplayer/ui/layouts/youtube.lua",
         "musicplayer/ui/layouts/radio.lua",
         "musicplayer/features/menu/main_menu.lua",
         "musicplayer/features/youtube/youtube_player.lua",

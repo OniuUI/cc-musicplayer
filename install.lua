@@ -158,7 +158,6 @@ local files = {
 	-- UI modules
 	{name = "themes.lua", url = baseUri .. "musicplayer/ui/themes.lua", path = "musicplayer/ui/themes.lua"},
 	{name = "components.lua", url = baseUri .. "musicplayer/ui/components.lua", path = "musicplayer/ui/components.lua"},
-	{name = "youtube.lua", url = baseUri .. "musicplayer/ui/layouts/youtube.lua", path = "musicplayer/ui/layouts/youtube.lua"},
 	{name = "radio.lua", url = baseUri .. "musicplayer/ui/layouts/radio.lua", path = "musicplayer/ui/layouts/radio.lua"},
 	
 	-- Audio modules
