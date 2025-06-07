@@ -138,9 +138,8 @@ end
 function youtubePlayer.uiLoop(state, speakers)
     youtubeUI.redrawScreen(state)
     
-    -- Add event debugging for the first few seconds to help diagnose issues
-    state.logger.info("YouTube", "Starting UI loop - try clicking on the monitor now!")
-    youtubePlayer.debugEvents(state, 5) -- Debug events for 5 seconds
+    -- Log that we're ready for input without blocking
+    state.logger.info("YouTube", "YouTube player ready - UI is now interactive!")
 
     while true do
         -- Update screen dimensions
@@ -329,52 +328,55 @@ function youtubePlayer.handleInput(state, speakers)
         return "redraw"
     end
     
-    -- Regular input handling
-    while true do
-        local event, param1, param2, param3 = os.pullEvent()
-        -- Handle both mouse_click and monitor_touch
-        if event == "mouse_click" or event == "monitor_touch" then
-            local button, x, y, monitorSide
-            if event == "mouse_click" then
-                button, x, y = param1, param2, param3
-                state.logger.debug("YouTube", "Regular mouse click at (" .. x .. "," .. y .. ") button=" .. button)
-            else -- monitor_touch
-                -- monitor_touch returns: event, side, x, y (no button parameter)
-                -- param1 = side, param2 = x, param3 = y
-                monitorSide = param1
-                x, y = param2, param3
-                button = 1  -- Treat monitor touch as left click
-                
-                state.logger.debug("YouTube", "Regular monitor touch on side '" .. tostring(monitorSide) .. "' at (" .. x .. "," .. y .. ")")
-                
-                -- Check if we're running on a monitor and if this touch is from the correct monitor
-                if state.system and state.system.telemetry then
-                    local currentMonitorSide = state.system.telemetry.getCurrentMonitorSide()
-                    if currentMonitorSide then
-                        state.logger.debug("YouTube", "Currently running on monitor: " .. currentMonitorSide)
-                        if monitorSide ~= currentMonitorSide then
-                            state.logger.debug("YouTube", "Ignoring touch from different monitor: " .. monitorSide .. " (expected: " .. currentMonitorSide .. ")")
-                            -- Continue to next event instead of processing this touch
-                            goto continue
-                        end
-                    else
-                        state.logger.debug("YouTube", "Not running on a monitor, processing touch from: " .. monitorSide)
+    -- Regular input handling - FIXED: Handle single event instead of infinite loop
+    local event, param1, param2, param3 = os.pullEvent()
+    
+    -- Handle both mouse_click and monitor_touch
+    if event == "mouse_click" or event == "monitor_touch" then
+        local button, x, y, monitorSide
+        if event == "mouse_click" then
+            button, x, y = param1, param2, param3
+            state.logger.debug("YouTube", "Regular mouse click at (" .. x .. "," .. y .. ") button=" .. button)
+        else -- monitor_touch
+            -- monitor_touch returns: event, side, x, y (no button parameter)
+            -- param1 = side, param2 = x, param3 = y
+            monitorSide = param1
+            x, y = param2, param3
+            button = 1  -- Treat monitor touch as left click
+            
+            state.logger.debug("YouTube", "Regular monitor touch on side '" .. tostring(monitorSide) .. "' at (" .. x .. "," .. y .. ")")
+            
+            -- Check if we're running on a monitor and if this touch is from the correct monitor
+            if state.system and state.system.telemetry then
+                local currentMonitorSide = state.system.telemetry.getCurrentMonitorSide()
+                if currentMonitorSide then
+                    state.logger.debug("YouTube", "Currently running on monitor: " .. currentMonitorSide)
+                    if monitorSide ~= currentMonitorSide then
+                        state.logger.debug("YouTube", "Ignoring touch from different monitor: " .. monitorSide .. " (expected: " .. currentMonitorSide .. ")")
+                        -- Return nil to continue the main loop
+                        return nil
                     end
                 else
-                    state.logger.debug("YouTube", "No telemetry system available, processing touch from: " .. monitorSide)
+                    state.logger.debug("YouTube", "Not running on a monitor, processing touch from: " .. monitorSide)
                 end
+            else
+                state.logger.debug("YouTube", "No telemetry system available, processing touch from: " .. monitorSide)
             end
-            
-            local result = youtubePlayer.handleClick(state, speakers, button, x, y)
-            if result then
-                return result
-            end
-        elseif event == "redraw_screen" then
-            return "redraw"
         end
         
-        ::continue::
+        local result = youtubePlayer.handleClick(state, speakers, button, x, y)
+        if result then
+            return result
+        else
+            -- Even if click wasn't handled, trigger a redraw to keep UI responsive
+            return "redraw"
+        end
+    elseif event == "redraw_screen" then
+        return "redraw"
     end
+    
+    -- For any other event, return nil to continue the main loop
+    return nil
 end
 
 function youtubePlayer.handleClick(state, speakers, button, x, y)
@@ -934,30 +936,6 @@ function youtubePlayer.cleanup(state)
     if not success then
         state.logger.error("YouTube", "Cleanup failed: " .. tostring(error))
     end
-end
-
--- Debug function to monitor all events for a short period
-function youtubePlayer.debugEvents(state, duration)
-    state.logger.info("YouTube", "Starting event debugging for " .. duration .. " seconds...")
-    local startTime = os.clock()
-    
-    while os.clock() - startTime < duration do
-        local event, param1, param2, param3, param4 = os.pullEventRaw(0.1)
-        
-        if event then
-            if event == "monitor_touch" then
-                state.logger.info("YouTube", "DEBUG: monitor_touch event - side=" .. tostring(param1) .. " x=" .. tostring(param2) .. " y=" .. tostring(param3))
-            elseif event == "mouse_click" then
-                state.logger.info("YouTube", "DEBUG: mouse_click event - button=" .. tostring(param1) .. " x=" .. tostring(param2) .. " y=" .. tostring(param3))
-            elseif event == "key" then
-                state.logger.debug("YouTube", "DEBUG: key event - key=" .. tostring(param1))
-            elseif event ~= "timer" then -- Don't spam with timer events
-                state.logger.debug("YouTube", "DEBUG: " .. event .. " event")
-            end
-        end
-    end
-    
-    state.logger.info("YouTube", "Event debugging completed")
 end
 
 return youtubePlayer 
