@@ -71,6 +71,12 @@ function radioHost.init(systemModules)
         protocol_available = false,
         last_announce_time = 0,
         announce_interval = 30, -- seconds
+        last_sync_time = 0,
+        sync_interval = 10, -- seconds - sync every 10 seconds
+        
+        -- Playback synchronization
+        current_playback_session = nil, -- Unique ID for current playback session
+        playback_start_time = 0, -- When current song started playing
         
         -- API configuration
         api_base_url = "https://ipod-2to6magyna-uc.a.run.app/",
@@ -682,10 +688,43 @@ function radioHost.broadcastAudioChunk(state, audioBuffer)
         type = "audio_chunk",
         station_id = os.getComputerID(),
         audio_data = audioBuffer,
+        playback_session = state.current_playback_session,
         timestamp = os.epoch("utc")
     }
     
     radioHost.broadcastMessage(state, message)
+end
+
+-- NEW: Broadcast detailed sync status to keep clients synchronized
+function radioHost.broadcastSyncStatus(state)
+    local currentTime = os.epoch("utc") / 1000
+    
+    local syncMessage = {
+        type = "sync_status",
+        station_id = os.getComputerID(),
+        
+        -- Current playback state
+        playing = state.playing,
+        now_playing = state.now_playing,
+        current_song_index = state.current_song_index,
+        
+        -- Synchronization data
+        playback_session = state.current_playback_session,
+        playback_start_time = state.playback_start_time,
+        server_time = currentTime,
+        
+        -- Playlist info
+        playlist_size = #state.playlist,
+        looping = state.looping,
+        
+        -- Station info
+        listener_count = #state.listeners,
+        
+        timestamp = os.epoch("utc")
+    }
+    
+    radioHost.broadcastMessage(state, syncMessage)
+    state.logger.info("RadioHost", "Sync status broadcast to " .. #state.listeners .. " listeners")
 end
 
 function radioHost.handleNetworkMessage(state, message, replyChannel)
@@ -1851,6 +1890,12 @@ function radioHost.networkLoop(state)
             state.last_announce_time = currentTime
         end
         
+        -- NEW: Send sync status periodically to keep clients synchronized
+        if state.is_broadcasting and #state.listeners > 0 and (currentTime - state.last_sync_time) >= state.sync_interval then
+            radioHost.broadcastSyncStatus(state)
+            state.last_sync_time = currentTime
+        end
+        
         -- Handle incoming network messages
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
@@ -1871,12 +1916,15 @@ function radioHost.networkLoop(state)
     end
 end
 
--- PLAYBACK CONTROL FUNCTIONS (FIXED)
+-- PLAYBACK CONTROL FUNCTIONS (FIXED with synchronization)
 function radioHost.togglePlayback(state, speakers)
     if state.now_playing then
         state.playing = not state.playing
         
         if state.playing and not state.player_handle then
+            -- Generate new playback session when starting
+            state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
+            state.playback_start_time = os.epoch("utc") / 1000
             state.needs_next_chunk = 1
             os.queueEvent("audio_update")
         elseif not state.playing then
@@ -1887,23 +1935,28 @@ function radioHost.togglePlayback(state, speakers)
             os.queueEvent("playback_stopped")
         end
         
-        state.logger.info("RadioHost", "Playback " .. (state.playing and "started" or "paused"))
+        state.logger.info("RadioHost", "Playback " .. (state.playing and "started" or "paused") .. " - Session: " .. (state.current_playback_session or "none"))
         
         -- Broadcast playback state to listeners
         if state.is_broadcasting then
             radioHost.broadcastPlaybackState(state)
+            -- Send immediate sync to ensure clients are updated
+            radioHost.broadcastSyncStatus(state)
         end
     elseif #state.playlist > 0 then
         -- Start playing first song if no song is selected
         state.current_song_index = 1
         state.now_playing = state.playlist[1]
         state.playing = true
+        state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
+        state.playback_start_time = os.epoch("utc") / 1000
         state.needs_next_chunk = 1
         state.decoder = require("cc.audio.dfpwm").make_decoder()
-        state.logger.info("RadioHost", "Started playing: " .. state.now_playing.name)
+        state.logger.info("RadioHost", "Started playing: " .. state.now_playing.name .. " - Session: " .. state.current_playback_session)
         
         if state.is_broadcasting then
             radioHost.broadcastSongChange(state)
+            radioHost.broadcastSyncStatus(state)
         end
         
         os.queueEvent("audio_update")
@@ -1915,21 +1968,25 @@ function radioHost.nextSong(state, speakers)
         return
     end
     
-    -- Stop current playback
+    -- Stop current playback COMPLETELY
     if state.player_handle then
         state.player_handle.close()
         state.player_handle = nil
     end
     
-    -- Stop speakers
+    -- Stop speakers and clear any pending audio
     for _, speaker in ipairs(speakers) do
         speaker.stop()
     end
     os.queueEvent("playback_stopped")
     
+    -- Clear playback session to prevent overlapping
+    state.current_playback_session = nil
+    state.playback_start_time = 0
+    
     -- Move to next song
     if state.looping == 2 then -- Song loop
-        -- Keep current song
+        -- Keep current song but reset session
     elseif state.current_song_index < #state.playlist then
         state.current_song_index = state.current_song_index + 1
     elseif state.looping == 1 then -- Playlist loop
@@ -1939,24 +1996,30 @@ function radioHost.nextSong(state, speakers)
         state.playing = false
         state.now_playing = nil
         state.current_song_index = 0
+        state.current_playback_session = nil
+        state.playback_start_time = 0
         
         if state.is_broadcasting then
             radioHost.broadcastPlaybackState(state)
+            radioHost.broadcastSyncStatus(state)
         end
         return
     end
     
-    -- Start new song
+    -- Start new song with new session
     state.now_playing = state.playlist[state.current_song_index]
+    state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
+    state.playback_start_time = os.epoch("utc") / 1000
     state.needs_next_chunk = 1
     state.decoder = require("cc.audio.dfpwm").make_decoder()
     state.playing_id = nil -- Reset to trigger new download
     
-    state.logger.info("RadioHost", "Next song: " .. state.now_playing.name)
+    state.logger.info("RadioHost", "Next song: " .. state.now_playing.name .. " - New Session: " .. state.current_playback_session)
     
     -- Broadcast song change to listeners
     if state.is_broadcasting then
         radioHost.broadcastSongChange(state)
+        radioHost.broadcastSyncStatus(state)
     end
     
     os.queueEvent("audio_update")
@@ -1967,17 +2030,21 @@ function radioHost.previousSong(state, speakers)
         return
     end
     
-    -- Stop current playback
+    -- Stop current playback COMPLETELY
     if state.player_handle then
         state.player_handle.close()
         state.player_handle = nil
     end
     
-    -- Stop speakers
+    -- Stop speakers and clear any pending audio
     for _, speaker in ipairs(speakers) do
         speaker.stop()
     end
     os.queueEvent("playback_stopped")
+    
+    -- Clear playback session to prevent overlapping
+    state.current_playback_session = nil
+    state.playback_start_time = 0
     
     -- Move to previous song
     if state.current_song_index > 1 then
@@ -1989,17 +2056,20 @@ function radioHost.previousSong(state, speakers)
         state.current_song_index = 1
     end
     
-    -- Start song
+    -- Start song with new session
     state.now_playing = state.playlist[state.current_song_index]
+    state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
+    state.playback_start_time = os.epoch("utc") / 1000
     state.needs_next_chunk = 1
     state.decoder = require("cc.audio.dfpwm").make_decoder()
     state.playing_id = nil -- Reset to trigger new download
     
-    state.logger.info("RadioHost", "Previous song: " .. state.now_playing.name)
+    state.logger.info("RadioHost", "Previous song: " .. state.now_playing.name .. " - New Session: " .. state.current_playback_session)
     
     -- Broadcast song change to listeners
     if state.is_broadcasting then
         radioHost.broadcastSongChange(state)
+        radioHost.broadcastSyncStatus(state)
     end
     
     os.queueEvent("audio_update")

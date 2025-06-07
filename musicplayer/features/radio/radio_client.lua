@@ -35,11 +35,19 @@ function radioClient.init(systemModules)
         playlist = {},
         current_song_index = 0,
         
-        -- Audio streaming (FIXED)
+        -- Audio streaming (FIXED with synchronization)
         audio_buffer = {},
         decoder = require("cc.audio.dfpwm").make_decoder(),
         volume = 1.5,
+        muted = false, -- NEW: Mute state for client
         is_playing_audio = false, -- Track if we're actively playing audio
+        
+        -- Synchronization state (NEW)
+        current_playback_session = nil, -- Track current session from host
+        last_sync_time = 0,
+        sync_timeout = 30, -- seconds - disconnect if no sync for 30 seconds
+        host_playback_start_time = 0,
+        client_start_offset = 0, -- Offset to sync with host timing
         
         -- Network state
         protocol_available = false,
@@ -726,10 +734,35 @@ function radioClient.disconnectFromStation(state)
     state.audio_buffer = {}
 end
 
--- AUDIO LOOP (synchronized streaming - FIXED)
+-- AUDIO LOOP (synchronized streaming - FIXED with session validation)
 function radioClient.audioLoop(state, speakers)
     while true do
-        if state.connection_status == "connected" and state.playing and #state.audio_buffer > 0 then
+        local currentTime = os.epoch("utc") / 1000
+        
+        -- Check for sync timeout - disconnect if no sync for too long
+        if state.connection_status == "connected" and state.last_sync_time > 0 then
+            if (currentTime - state.last_sync_time) > state.sync_timeout then
+                state.logger.warn("RadioClient", "Sync timeout - disconnecting from station")
+                radioClient.disconnectFromStation(state)
+                state.connection_status = "error"
+                state.connection_error = "Lost synchronization with host"
+                
+                -- Stop all audio immediately
+                for _, speaker in ipairs(speakers) do
+                    speaker.stop()
+                end
+                state.is_playing_audio = false
+                state.audio_buffer = {}
+                state.current_playback_session = nil
+                
+                os.queueEvent("redraw_screen")
+                sleep(1)
+                goto continue
+            end
+        end
+        
+        -- Only play audio if we have a valid session and are connected
+        if state.connection_status == "connected" and state.playing and #state.audio_buffer > 0 and state.current_playback_session then
             -- Play buffered audio
             local audioData = table.remove(state.audio_buffer, 1)
             
@@ -784,6 +817,8 @@ function radioClient.audioLoop(state, speakers)
             -- No audio to play or not connected/playing
             sleep(0.05)
         end
+        
+        ::continue::
     end
 end
 
@@ -925,31 +960,102 @@ function radioClient.handleNetworkMessage(state, message)
     if data.type == "audio_chunk" then
         -- Buffer audio data for synchronized playback (FIXED)
         if data.audio_data and state.connection_status == "connected" and state.playing then
-            table.insert(state.audio_buffer, data.audio_data)
-            
-            -- Limit buffer size to prevent memory issues and maintain sync
-            while #state.audio_buffer > 5 do -- Reduced buffer size for better sync
-                table.remove(state.audio_buffer, 1)
+            -- Check if this audio chunk belongs to current session
+            if data.playback_session and data.playback_session == state.current_playback_session then
+                table.insert(state.audio_buffer, data.audio_data)
+                
+                -- Limit buffer size to prevent memory issues and maintain sync
+                while #state.audio_buffer > 5 do -- Reduced buffer size for better sync
+                    table.remove(state.audio_buffer, 1)
+                end
+                
+                state.logger.debug("RadioClient", "Audio chunk buffered for session " .. data.playback_session .. ", buffer size: " .. #state.audio_buffer)
+            else
+                state.logger.debug("RadioClient", "Ignoring audio chunk from different session: " .. (data.playback_session or "none") .. " vs " .. (state.current_playback_session or "none"))
             end
+        end
+        
+    elseif data.type == "sync_status" then
+        -- NEW: Handle periodic synchronization updates from host
+        local currentTime = os.epoch("utc") / 1000
+        state.last_sync_time = currentTime
+        
+        -- Check if playback session changed (new song started)
+        if data.playback_session ~= state.current_playback_session then
+            state.logger.info("RadioClient", "Playback session changed: " .. (state.current_playback_session or "none") .. " -> " .. (data.playback_session or "none"))
             
-            state.logger.debug("RadioClient", "Audio chunk buffered, buffer size: " .. #state.audio_buffer)
+            -- Stop current audio immediately to prevent overlap
+            local speakers = state.speakerManager.getRawSpeakers()
+            for _, speaker in ipairs(speakers) do
+                speaker.stop()
+            end
+            state.is_playing_audio = false
+            
+            -- Clear audio buffer
+            state.audio_buffer = {}
+            
+            -- Update session info
+            state.current_playback_session = data.playback_session
+            state.host_playback_start_time = data.playback_start_time or 0
+            
+            -- Calculate client start offset for sync
+            if data.server_time and data.playback_start_time then
+                local timeSinceStart = data.server_time - data.playback_start_time
+                state.client_start_offset = timeSinceStart
+                state.logger.info("RadioClient", "Sync offset calculated: " .. state.client_start_offset .. " seconds")
+            end
+        end
+        
+        -- Update playback state
+        local wasPlaying = state.playing
+        state.playing = data.playing
+        state.now_playing = data.now_playing
+        state.current_song_index = data.current_song_index or 0
+        
+        -- Update playlist size info
+        if data.playlist_size then
+            state.logger.debug("RadioClient", "Host playlist has " .. data.playlist_size .. " songs")
+        end
+        
+        -- Log sync status
+        state.logger.debug("RadioClient", "Sync status received - Playing: " .. tostring(state.playing) .. ", Song: " .. (state.now_playing and state.now_playing.name or "None") .. ", Session: " .. (state.current_playback_session or "none"))
+        
+        -- If playback stopped, ensure we stop too
+        if wasPlaying and not state.playing then
+            local speakers = state.speakerManager.getRawSpeakers()
+            for _, speaker in ipairs(speakers) do
+                speaker.stop()
+            end
+            state.is_playing_audio = false
+            state.audio_buffer = {}
+            state.logger.info("RadioClient", "Stopped playback due to sync status")
         end
         
     elseif data.type == "song_change" then
-        -- Update current song
-        state.now_playing = data.now_playing
-        state.current_song_index = data.current_song_index
-        state.playing = data.playing
+        -- Update current song and reset session
+        state.logger.info("RadioClient", "Song change received: " .. (data.now_playing and data.now_playing.name or "None"))
+        
+        -- Stop current audio immediately to prevent overlap
+        local speakers = state.speakerManager.getRawSpeakers()
+        for _, speaker in ipairs(speakers) do
+            speaker.stop()
+        end
+        state.is_playing_audio = false
         
         -- Clear audio buffer when song changes
         state.audio_buffer = {}
         
-        -- Stop current audio playback
-        if state.speakerManager then
-            state.speakerManager.stopAll()
-        end
+        -- Update song info
+        state.now_playing = data.now_playing
+        state.current_song_index = data.current_song_index
+        state.playing = data.playing
         
-        state.logger.info("RadioClient", "Song changed: " .. (state.now_playing and state.now_playing.name or "None"))
+        -- Reset session - will be updated by next sync_status or audio_chunk
+        state.current_playback_session = nil
+        state.host_playback_start_time = 0
+        state.client_start_offset = 0
+        
+        state.logger.info("RadioClient", "Song changed to: " .. (state.now_playing and state.now_playing.name or "None") .. ", session reset")
         
     elseif data.type == "playback_state" then
         -- Update playback state
@@ -957,13 +1063,18 @@ function radioClient.handleNetworkMessage(state, message)
         state.playing = data.playing
         state.now_playing = data.now_playing
         
-        -- If playback stopped, clear buffer and stop speakers
+        state.logger.info("RadioClient", "Playback state changed: " .. tostring(state.playing) .. " (was " .. tostring(wasPlaying) .. ")")
+        
+        -- If playback stopped, clear buffer and stop speakers immediately
         if wasPlaying and not state.playing then
-            state.audio_buffer = {}
-            if state.speakerManager then
-                state.speakerManager.stopAll()
+            local speakers = state.speakerManager.getRawSpeakers()
+            for _, speaker in ipairs(speakers) do
+                speaker.stop()
             end
-            state.logger.info("RadioClient", "Playback stopped by host")
+            state.is_playing_audio = false
+            state.audio_buffer = {}
+            state.current_playback_session = nil
+            state.logger.info("RadioClient", "Playback stopped by host - cleared session")
         elseif not wasPlaying and state.playing then
             state.logger.info("RadioClient", "Playback started by host")
         end
