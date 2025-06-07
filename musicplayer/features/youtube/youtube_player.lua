@@ -202,288 +202,323 @@ function youtubePlayer.uiLoop(state, speakers)
                 end,
                 function()
                     while state.waiting_for_input do
-                        local event, button, x, y = os.pullEvent("mouse_click")
-                        if y < 3 or y > 5 or x < 2 or x > state.width-1 then
-                            state.waiting_for_input = false
-                            os.queueEvent("redraw_screen")
-                            break
+                        -- Handle both mouse_click and monitor_touch for input cancellation
+                        local event, param1, param2, param3 = os.pullEvent()
+                        if event == "mouse_click" or event == "monitor_touch" then
+                            local x, y
+                            if event == "mouse_click" then
+                                x, y = param2, param3
+                            else -- monitor_touch
+                                x, y = param2, param3  -- monitor_touch: side, x, y
+                            end
+                            
+                            if y < 3 or y > 5 or x < 2 or x > state.width-1 then
+                                state.waiting_for_input = false
+                                os.queueEvent("redraw_screen")
+                                break
+                            end
                         end
                     end
                 end
             )
         else
-            -- SIMPLIFIED EVENT HANDLING - Based on old working version
+            -- SIMPLIFIED EVENT HANDLING - Based on old working version with monitor support
+            local shouldExit = false
+            
             parallel.waitForAny(
                 function()
-                    local event, button, x, y = os.pullEvent("mouse_click")
+                    -- Handle both mouse_click and monitor_touch events
+                    local event, param1, param2, param3 = os.pullEvent()
                     
-                    if button == 1 then
-                        state.logger.debug("YouTube", "Mouse click at (" .. x .. "," .. y .. ")")
-                        
-                        -- Back to menu button (FIRST CHECK - highest priority)
-                        if y == state.height - 3 and x >= 2 and x <= 17 then
-                            state.logger.info("YouTube", "Back to menu button clicked")
-                            return "back_to_menu"
+                    if event == "mouse_click" or event == "monitor_touch" then
+                        local button, x, y
+                        if event == "mouse_click" then
+                            button, x, y = param1, param2, param3
+                        else -- monitor_touch
+                            -- monitor_touch: side, x, y (no button, treat as left click)
+                            button, x, y = 1, param2, param3
+                            state.logger.debug("YouTube", "Monitor touch at (" .. x .. "," .. y .. ")")
                         end
                         
-                        -- Tabs (using original working logic)
-                        if state.in_search_result == false then
-                            if y == 2 then -- Tab row
-                                if x < state.width/2 then
-                                    state.tab = 1
-                                    state.logger.debug("YouTube", "Switched to tab 1 (Now Playing)")
-                                else
-                                    state.tab = 2
-                                    state.logger.debug("YouTube", "Switched to tab 2 (Search)")
-                                end
-                                youtubeUI.redrawScreen(state)
+                        if button == 1 then
+                            state.logger.debug("YouTube", "Click at (" .. x .. "," .. y .. ")")
+                            
+                            -- Back to menu button (FIRST CHECK - highest priority)
+                            if y == state.height - 3 and x >= 2 and x <= 17 then
+                                state.logger.info("YouTube", "Back to menu button clicked")
+                                shouldExit = true
+                                return
                             end
-                        end
-                        
-                        -- Search tab handling (using original working coordinates)
-                        if state.tab == 2 and state.in_search_result == false then
-                            -- Search box click
-                            if y >= 3 and y <= 5 and x >= 2 and x <= state.width - 1 then
-                                state.logger.debug("YouTube", "Search box clicked")
-                                paintutils.drawFilledBox(2, 3, state.width-1, 5, colors.white)
-                                term.setBackgroundColor(colors.white)
-                                term.setTextColor(colors.black)
-                                state.waiting_for_input = true
-                            end
-
-                            -- Search result clicks (using original working coordinates)
-                            if state.search_results then
-                                for i=1, #state.search_results do
-                                    local resultY1 = 7 + (i-1)*2  -- First line of result
-                                    local resultY2 = 8 + (i-1)*2  -- Second line of result
-                                    if (y == resultY1 or y == resultY2) and resultY2 < state.height - 2 then
-                                        state.logger.info("YouTube", "Clicked on search result " .. i .. ": " .. state.search_results[i].name)
-                                        -- Highlight selected result (original style)
-                                        term.setBackgroundColor(colors.white)
-                                        term.setTextColor(colors.black)
-                                        term.setCursorPos(2, resultY1)
-                                        term.clearLine()
-                                        term.write(state.search_results[i].name)
-                                        term.setTextColor(colors.gray)
-                                        term.setCursorPos(2, resultY2)
-                                        term.clearLine()
-                                        term.write(state.search_results[i].artist)
-                                        sleep(0.2)
-                                        state.in_search_result = true
-                                        state.clicked_result = i
-                                        youtubeUI.redrawScreen(state)
+                            
+                            -- Tabs (using original working logic)
+                            if state.in_search_result == false then
+                                if y == 2 then -- Tab row
+                                    if x < state.width/2 then
+                                        state.tab = 1
+                                        state.logger.debug("YouTube", "Switched to tab 1 (Now Playing)")
+                                    else
+                                        state.tab = 2
+                                        state.logger.debug("YouTube", "Switched to tab 2 (Search)")
                                     end
+                                    youtubeUI.redrawScreen(state)
                                 end
                             end
-                        elseif state.tab == 2 and state.in_search_result == true then
-                            -- Song action menu clicks (using original working logic)
-                            local theme = themes.getCurrent()
-                            term.setBackgroundColor(theme.colors.button_active)
-                            term.setTextColor(theme.colors.background)
-
-                            if y == 6 then -- Play now
-                                term.setCursorPos(2, 6)
-                                term.clearLine()
-                                term.write("Play now")
-                                sleep(0.2)
-                                state.in_search_result = false
-                                
-                                -- Stop current playback
-                                for _, speaker in ipairs(speakers) do
-                                    speaker.stop()
-                                    os.queueEvent("playback_stopped")
+                            
+                            -- Search tab handling (using original working coordinates)
+                            if state.tab == 2 and state.in_search_result == false then
+                                -- Search box click
+                                if y >= 3 and y <= 5 and x >= 2 and x <= state.width - 1 then
+                                    state.logger.debug("YouTube", "Search box clicked")
+                                    paintutils.drawFilledBox(2, 3, state.width-1, 5, colors.white)
+                                    term.setBackgroundColor(colors.white)
+                                    term.setTextColor(colors.black)
+                                    state.waiting_for_input = true
                                 end
-                                
-                                state.playing = true
-                                state.is_error = false
-                                state.playing_id = nil
-                                
-                                local selectedSong = state.search_results[state.clicked_result]
-                                if selectedSong.type == "playlist" then
-                                    state.now_playing = selectedSong.playlist_items[1]
-                                    state.queue = {}
-                                    if #selectedSong.playlist_items > 1 then
-                                        for i=2, #selectedSong.playlist_items do
-                                            table.insert(state.queue, selectedSong.playlist_items[i])
+
+                                -- Search result clicks (using original working coordinates)
+                                if state.search_results then
+                                    for i=1, #state.search_results do
+                                        local resultY1 = 7 + (i-1)*2  -- First line of result
+                                        local resultY2 = 8 + (i-1)*2  -- Second line of result
+                                        if (y == resultY1 or y == resultY2) and resultY2 < state.height - 2 then
+                                            state.logger.info("YouTube", "Clicked on search result " .. i .. ": " .. state.search_results[i].name)
+                                            -- Highlight selected result (original style)
+                                            term.setBackgroundColor(colors.white)
+                                            term.setTextColor(colors.black)
+                                            term.setCursorPos(2, resultY1)
+                                            term.clearLine()
+                                            term.write(state.search_results[i].name)
+                                            term.setTextColor(colors.gray)
+                                            term.setCursorPos(2, resultY2)
+                                            term.clearLine()
+                                            term.write(state.search_results[i].artist)
+                                            sleep(0.2)
+                                            state.in_search_result = true
+                                            state.clicked_result = i
+                                            youtubeUI.redrawScreen(state)
                                         end
                                     end
-                                else
-                                    state.now_playing = selectedSong
                                 end
-                                
-                                state.logger.info("YouTube", "Playing now: " .. state.now_playing.name)
-                                os.queueEvent("audio_update")
-                                
-                            elseif y == 8 then -- Play next
-                                term.setCursorPos(2, 8)
-                                term.clearLine()
-                                term.write("Play next")
-                                sleep(0.2)
-                                state.in_search_result = false
-                                
-                                local selectedSong = state.search_results[state.clicked_result]
-                                if selectedSong.type == "playlist" then
-                                    for i = #selectedSong.playlist_items, 1, -1 do
-                                        table.insert(state.queue, 1, selectedSong.playlist_items[i])
-                                    end
-                                else
-                                    table.insert(state.queue, 1, selectedSong)
-                                end
-                                
-                                state.logger.info("YouTube", "Added to play next: " .. selectedSong.name)
-                                os.queueEvent("audio_update")
-                                
-                            elseif y == 10 then -- Add to queue
-                                term.setCursorPos(2, 10)
-                                term.clearLine()
-                                term.write("Add to queue")
-                                sleep(0.2)
-                                state.in_search_result = false
-                                
-                                local selectedSong = state.search_results[state.clicked_result]
-                                if selectedSong.type == "playlist" then
-                                    for i = 1, #selectedSong.playlist_items do
-                                        table.insert(state.queue, selectedSong.playlist_items[i])
-                                    end
-                                else
-                                    table.insert(state.queue, selectedSong)
-                                end
-                                
-                                state.logger.info("YouTube", "Added to queue: " .. selectedSong.name)
-                                os.queueEvent("audio_update")
-                                
-                            elseif y == 13 then -- Cancel
-                                term.setCursorPos(2, 13)
-                                term.clearLine()
-                                term.write("Cancel")
-                                sleep(0.2)
-                                state.in_search_result = false
-                            end
+                            elseif state.tab == 2 and state.in_search_result == true then
+                                -- Song action menu clicks (using original working logic)
+                                local theme = themes.getCurrent()
+                                term.setBackgroundColor(theme.colors.button_active)
+                                term.setTextColor(theme.colors.background)
 
-                            youtubeUI.redrawScreen(state)
-                        elseif state.tab == 1 and state.in_search_result == false then
-                            -- Now playing tab clicks (using original working logic)
-                            if y == 7 then -- Control buttons row
-                                -- Play/stop button
-                                if x >= 2 and x < 2 + 6 then
-                                    if state.playing or state.now_playing ~= nil or #state.queue > 0 then
-                                        local theme = themes.getCurrent()
-                                        term.setBackgroundColor(theme.colors.button_active)
-                                        term.setTextColor(theme.colors.background)
-                                        term.setCursorPos(2, 7)
-                                        if state.playing then
-                                            term.write(" Stop ")
-                                        else 
-                                            term.write(" Play ")
-                                        end
-                                        sleep(0.2)
+                                if y == 6 then -- Play now
+                                    term.setCursorPos(2, 6)
+                                    term.clearLine()
+                                    term.write("Play now")
+                                    sleep(0.2)
+                                    state.in_search_result = false
+                                    
+                                    -- Stop current playback
+                                    for _, speaker in ipairs(speakers) do
+                                        speaker.stop()
+                                        os.queueEvent("playback_stopped")
                                     end
                                     
-                                    if state.playing then
-                                        state.playing = false
-                                        for _, speaker in ipairs(speakers) do
-                                            speaker.stop()
-                                            os.queueEvent("playback_stopped")
+                                    state.playing = true
+                                    state.is_error = false
+                                    state.playing_id = nil
+                                    
+                                    local selectedSong = state.search_results[state.clicked_result]
+                                    if selectedSong.type == "playlist" then
+                                        state.now_playing = selectedSong.playlist_items[1]
+                                        state.queue = {}
+                                        if #selectedSong.playlist_items > 1 then
+                                            for i=2, #selectedSong.playlist_items do
+                                                table.insert(state.queue, selectedSong.playlist_items[i])
+                                            end
                                         end
-                                        state.playing_id = nil
-                                        state.is_loading = false
-                                        state.is_error = false
-                                        state.logger.info("YouTube", "Playback stopped")
-                                        os.queueEvent("audio_update")
-                                    elseif state.now_playing ~= nil then
-                                        state.playing_id = nil
-                                        state.playing = true
-                                        state.is_error = false
-                                        state.logger.info("YouTube", "Playback resumed")
-                                        os.queueEvent("audio_update")
-                                    elseif #state.queue > 0 then
-                                        state.now_playing = state.queue[1]
-                                        table.remove(state.queue, 1)
-                                        state.playing_id = nil
-                                        state.playing = true
-                                        state.is_error = false
-                                        state.logger.info("YouTube", "Playing from queue: " .. state.now_playing.name)
-                                        os.queueEvent("audio_update")
+                                    else
+                                        state.now_playing = selectedSong
                                     end
+                                    
+                                    state.logger.info("YouTube", "Playing now: " .. state.now_playing.name)
+                                    os.queueEvent("audio_update")
+                                    
+                                elseif y == 8 then -- Play next
+                                    term.setCursorPos(2, 8)
+                                    term.clearLine()
+                                    term.write("Play next")
+                                    sleep(0.2)
+                                    state.in_search_result = false
+                                    
+                                    local selectedSong = state.search_results[state.clicked_result]
+                                    if selectedSong.type == "playlist" then
+                                        for i = #selectedSong.playlist_items, 1, -1 do
+                                            table.insert(state.queue, 1, selectedSong.playlist_items[i])
+                                        end
+                                    else
+                                        table.insert(state.queue, 1, selectedSong)
+                                    end
+                                    
+                                    state.logger.info("YouTube", "Added to play next: " .. selectedSong.name)
+                                    os.queueEvent("audio_update")
+                                    
+                                elseif y == 10 then -- Add to queue
+                                    term.setCursorPos(2, 10)
+                                    term.clearLine()
+                                    term.write("Add to queue")
+                                    sleep(0.2)
+                                    state.in_search_result = false
+                                    
+                                    local selectedSong = state.search_results[state.clicked_result]
+                                    if selectedSong.type == "playlist" then
+                                        for i = 1, #selectedSong.playlist_items do
+                                            table.insert(state.queue, selectedSong.playlist_items[i])
+                                        end
+                                    else
+                                        table.insert(state.queue, selectedSong)
+                                    end
+                                    
+                                    state.logger.info("YouTube", "Added to queue: " .. selectedSong.name)
+                                    os.queueEvent("audio_update")
+                                    
+                                elseif y == 13 then -- Cancel
+                                    term.setCursorPos(2, 13)
+                                    term.clearLine()
+                                    term.write("Cancel")
+                                    sleep(0.2)
+                                    state.in_search_result = false
                                 end
 
-                                -- Skip button
-                                if x >= 2 + 7 and x < 2 + 7 + 6 then
-                                    if state.now_playing ~= nil or #state.queue > 0 then
-                                        local theme = themes.getCurrent()
-                                        term.setBackgroundColor(theme.colors.button_active)
-                                        term.setTextColor(theme.colors.background)
-                                        term.setCursorPos(2 + 7, 7)
-                                        term.write(" Skip ")
-                                        sleep(0.2)
-
-                                        state.is_error = false
+                                youtubeUI.redrawScreen(state)
+                            elseif state.tab == 1 and state.in_search_result == false then
+                                -- Now playing tab clicks (using original working logic)
+                                if y == 7 then -- Control buttons row
+                                    -- Play/stop button
+                                    if x >= 2 and x < 2 + 6 then
+                                        if state.playing or state.now_playing ~= nil or #state.queue > 0 then
+                                            local theme = themes.getCurrent()
+                                            term.setBackgroundColor(theme.colors.button_active)
+                                            term.setTextColor(theme.colors.background)
+                                            term.setCursorPos(2, 7)
+                                            if state.playing then
+                                                term.write(" Stop ")
+                                            else 
+                                                term.write(" Play ")
+                                            end
+                                            sleep(0.2)
+                                        end
+                                        
                                         if state.playing then
+                                            state.playing = false
                                             for _, speaker in ipairs(speakers) do
                                                 speaker.stop()
                                                 os.queueEvent("playback_stopped")
                                             end
-                                        end
-                                        
-                                        if #state.queue > 0 then
-                                            if state.looping == 1 then
-                                                table.insert(state.queue, state.now_playing)
-                                            end
+                                            state.playing_id = nil
+                                            state.is_loading = false
+                                            state.is_error = false
+                                            state.logger.info("YouTube", "Playback stopped")
+                                            os.queueEvent("audio_update")
+                                        elseif state.now_playing ~= nil then
+                                            state.playing_id = nil
+                                            state.playing = true
+                                            state.is_error = false
+                                            state.logger.info("YouTube", "Playback resumed")
+                                            os.queueEvent("audio_update")
+                                        elseif #state.queue > 0 then
                                             state.now_playing = state.queue[1]
                                             table.remove(state.queue, 1)
                                             state.playing_id = nil
-                                            state.logger.info("YouTube", "Skipped to: " .. state.now_playing.name)
-                                        else
-                                            state.now_playing = nil
-                                            state.playing = false
-                                            state.is_loading = false
+                                            state.playing = true
                                             state.is_error = false
-                                            state.playing_id = nil
-                                            state.logger.info("YouTube", "Queue finished")
+                                            state.logger.info("YouTube", "Playing from queue: " .. state.now_playing.name)
+                                            os.queueEvent("audio_update")
                                         end
-                                        os.queueEvent("audio_update")
+                                    end
+
+                                    -- Skip button
+                                    if x >= 2 + 7 and x < 2 + 7 + 6 then
+                                        if state.now_playing ~= nil or #state.queue > 0 then
+                                            local theme = themes.getCurrent()
+                                            term.setBackgroundColor(theme.colors.button_active)
+                                            term.setTextColor(theme.colors.background)
+                                            term.setCursorPos(2 + 7, 7)
+                                            term.write(" Skip ")
+                                            sleep(0.2)
+
+                                            state.is_error = false
+                                            if state.playing then
+                                                for _, speaker in ipairs(speakers) do
+                                                    speaker.stop()
+                                                    os.queueEvent("playback_stopped")
+                                                end
+                                            end
+                                            
+                                            if #state.queue > 0 then
+                                                if state.looping == 1 then
+                                                    table.insert(state.queue, state.now_playing)
+                                                end
+                                                state.now_playing = state.queue[1]
+                                                table.remove(state.queue, 1)
+                                                state.playing_id = nil
+                                                state.logger.info("YouTube", "Skipped to: " .. state.now_playing.name)
+                                            else
+                                                state.now_playing = nil
+                                                state.playing = false
+                                                state.is_loading = false
+                                                state.is_error = false
+                                                state.playing_id = nil
+                                                state.logger.info("YouTube", "Queue finished")
+                                            end
+                                            os.queueEvent("audio_update")
+                                        end
+                                    end
+
+                                    -- Loop button
+                                    if x >= 2 + 7 + 7 and x < 2 + 7 + 7 + 12 then
+                                        if state.looping == 0 then
+                                            state.looping = 1
+                                        elseif state.looping == 1 then
+                                            state.looping = 2
+                                        else
+                                            state.looping = 0
+                                        end
+                                        local loopModes = {"OFF", "QUEUE", "SONG"}
+                                        state.logger.info("YouTube", "Loop mode: " .. loopModes[state.looping + 1])
                                     end
                                 end
 
-                                -- Loop button
-                                if x >= 2 + 7 + 7 and x < 2 + 7 + 7 + 12 then
-                                    if state.looping == 0 then
-                                        state.looping = 1
-                                    elseif state.looping == 1 then
-                                        state.looping = 2
-                                    else
-                                        state.looping = 0
+                                -- Volume slider handling (using original working coordinates)
+                                if y == 11 then -- Volume slider row
+                                    if x >= 2 and x < 2 + 24 then
+                                        state.volume = (x - 2) / 24 * 3.0
+                                        state.speakerManager.setVolume(state.volume)
+                                        state.logger.debug("YouTube", "Volume set to " .. math.floor((state.volume / 3.0) * 100) .. "%")
                                     end
-                                    local loopModes = {"OFF", "QUEUE", "SONG"}
-                                    state.logger.info("YouTube", "Loop mode: " .. loopModes[state.looping + 1])
                                 end
-                            end
 
-                            -- Volume slider handling (using original working coordinates)
-                            if y == 11 then -- Volume slider row
-                                if x >= 2 and x < 2 + 24 then
-                                    state.volume = (x - 2) / 24 * 3.0
-                                    state.speakerManager.setVolume(state.volume)
-                                    state.logger.debug("YouTube", "Volume set to " .. math.floor((state.volume / 3.0) * 100) .. "%")
-                                end
+                                youtubeUI.redrawScreen(state)
                             end
-
-                            youtubeUI.redrawScreen(state)
                         end
                     end
                 end,
                 function()
-                    local event, button, x, y = os.pullEvent("mouse_drag")
+                    -- Handle both mouse_drag and monitor_touch for volume slider
+                    local event, param1, param2, param3 = os.pullEvent()
                     
-                    if button == 1 and state.tab == 1 and state.in_search_result == false then
-                        -- Volume slider drag (using original working coordinates)
-                        if y == 11 then -- Volume slider row
-                            if x >= 2 and x < 2 + 24 then
-                                state.volume = (x - 2) / 24 * 3.0
-                                state.speakerManager.setVolume(state.volume)
-                                state.logger.debug("YouTube", "Volume dragged to " .. math.floor((state.volume / 3.0) * 100) .. "%")
+                    if event == "mouse_drag" or event == "monitor_touch" then
+                        local button, x, y
+                        if event == "mouse_drag" then
+                            button, x, y = param1, param2, param3
+                        else -- monitor_touch (treat as drag)
+                            button, x, y = 1, param2, param3
+                        end
+                        
+                        if button == 1 and state.tab == 1 and state.in_search_result == false then
+                            -- Volume slider drag (using original working coordinates)
+                            if y == 11 then -- Volume slider row
+                                if x >= 2 and x < 2 + 24 then
+                                    state.volume = (x - 2) / 24 * 3.0
+                                    state.speakerManager.setVolume(state.volume)
+                                    state.logger.debug("YouTube", "Volume dragged to " .. math.floor((state.volume / 3.0) * 100) .. "%")
+                                end
+                                youtubeUI.redrawScreen(state)
                             end
-                            youtubeUI.redrawScreen(state)
                         end
                     end
                 end,
@@ -492,11 +527,11 @@ function youtubePlayer.uiLoop(state, speakers)
                     youtubeUI.redrawScreen(state)
                 end
             )
-        end
-        
-        -- Check if we need to return to menu
-        if event == "back_to_menu" then
-            return "menu"
+            
+            -- Check if we need to return to menu
+            if shouldExit then
+                return "menu"
+            end
         end
     end
 end
