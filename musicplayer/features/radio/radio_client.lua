@@ -42,12 +42,13 @@ function radioClient.init(systemModules)
         muted = false, -- NEW: Mute state for client
         is_playing_audio = false, -- Track if we're actively playing audio
         
-        -- Synchronization state (NEW)
+        -- Synchronization state (NEW - more forgiving)
         current_playback_session = nil, -- Track current session from host
         last_sync_time = 0,
-        sync_timeout = 30, -- seconds - disconnect if no sync for 30 seconds
+        sync_timeout = 60, -- seconds - much longer timeout, only for detecting truly dead hosts
         host_playback_start_time = 0,
         client_start_offset = 0, -- Offset to sync with host timing
+        sync_warnings = 0, -- Count sync warnings before taking action
         
         -- Network state
         protocol_available = false,
@@ -621,21 +622,13 @@ end
 
 -- STATION MANAGEMENT
 function radioClient.scanForStations(state)
-    if not state.protocol_available then
-        return
-    end
-    
-    if state.scanning then
-        return -- Already scanning
-    end
+    state.logger.info("RadioClient", "Scanning for radio stations...")
     
     state.scanning = true
     state.scan_start_time = os.clock()
-    state.logger.info("RadioClient", "Starting station scan...")
+    state.stations = {}
     
-    -- Open broadcast channel and send discovery request
-    radioProtocol.openBroadcastChannel()
-    
+    -- Send discovery request
     local discoveryRequest = {
         type = "discovery_request",
         client_id = os.getComputerID(),
@@ -643,186 +636,199 @@ function radioClient.scanForStations(state)
     }
     
     radioProtocol.broadcast(discoveryRequest)
-    
-    -- Reset stations list for new scan
-    state.stations = {}
+    state.logger.info("RadioClient", "Discovery request sent")
 end
 
-function radioClient.connectToStation(state, station, speakers)
-    if state.connection_status == "connecting" then
+function radioClient.connectToStation(state, station)
+    if not station then
         return
     end
     
-    state.connection_status = "connecting"
-    state.connection_error = nil
-    state.connecting_to_station = station
-    state.connection_start_time = os.clock()
     state.logger.info("RadioClient", "Connecting to station: " .. station.station_name)
     
-    -- Send join request (non-blocking)
-    local clientId = os.getComputerID()
-    local stationChannel = radioProtocol.getStationChannel(station.station_id)
-    local clientChannel = radioProtocol.getClientChannel(clientId)
+    state.connection_status = "connecting"
+    state.connecting_to_station = station
+    state.connection_start_time = os.clock()
+    state.connection_error = nil
     
-    state.logger.info("RadioClient", "Using station channel: " .. stationChannel .. ", client channel: " .. clientChannel)
-    
-    -- Open channels
-    radioProtocol.openChannel(stationChannel)
-    radioProtocol.openChannel(clientChannel)
-    
-    -- Send join request
+    -- Send join request to station
     local joinRequest = {
         type = "join_request",
-        listener_id = clientId,
+        listener_id = os.getComputerID(),
         timestamp = os.epoch("utc")
     }
     
-    local protocolMessage = {
-        protocol_version = "1.0",
-        timestamp = os.epoch("utc"),
-        data = joinRequest
+    local stationChannel = radioProtocol.getStationChannel(station.station_id)
+    local clientChannel = radioProtocol.getClientChannel(os.getComputerID())
+    
+    -- Open our client channel to receive response
+    radioProtocol.openChannel(clientChannel)
+    
+    -- Send join request
+    radioProtocol.sendToChannel(stationChannel, joinRequest)
+    
+    state.logger.info("RadioClient", "Join request sent to station " .. station.station_id)
+end
+
+function radioClient.disconnect(state)
+    if not state.connected or not state.connected_station_id then
+        return
+    end
+    
+    state.logger.info("RadioClient", "Disconnecting from station")
+    
+    -- Send leave request
+    local leaveRequest = {
+        type = "leave_request",
+        listener_id = os.getComputerID(),
+        timestamp = os.epoch("utc")
     }
     
-    -- Get modem and send request
-    local modem = peripheral.find("modem")
-    if modem then
-        modem.transmit(stationChannel, clientChannel, protocolMessage)
-        state.logger.info("RadioClient", "Join request sent to station " .. station.station_id .. " on channel " .. stationChannel)
-    else
-        state.connection_status = "error"
-        state.connection_error = "No modem available"
-        state.logger.error("RadioClient", "No modem available for connection")
-    end
-end
-
-function radioClient.disconnectFromStation(state)
-    if state.connected_station then
-        -- Send leave request (non-blocking)
-        local clientId = os.getComputerID()
-        local stationChannel = radioProtocol.getStationChannel(state.connected_station.station_id)
-        
-        local leaveRequest = {
-            type = "leave_request",
-            listener_id = clientId,
-            timestamp = os.epoch("utc")
-        }
-        
-        local protocolMessage = {
-            protocol_version = "1.0",
-            timestamp = os.epoch("utc"),
-            data = leaveRequest
-        }
-        
-        -- Get modem and send request
-        local modem = peripheral.find("modem")
-        if modem then
-            modem.transmit(stationChannel, radioProtocol.getClientChannel(clientId), protocolMessage)
-            state.logger.info("RadioClient", "Leave request sent to station: " .. state.connected_station.station_name)
-        end
-        
-        state.logger.info("RadioClient", "Disconnected from station: " .. state.connected_station.station_name)
+    local stationChannel = radioProtocol.getStationChannel(state.connected_station_id)
+    radioProtocol.sendToChannel(stationChannel, leaveRequest)
+    
+    -- Stop audio
+    if state.player_handle then
+        state.player_handle.close()
+        state.player_handle = nil
     end
     
-    state.connection_status = "disconnected"
+    local speakers = state.speakerManager.getRawSpeakers()
+    for _, speaker in ipairs(speakers) do
+        speaker.stop()
+    end
+    
+    -- Reset connection state
+    state.connected = false
+    state.connected_station_id = nil
     state.connected_station = nil
-    state.connecting_to_station = nil
-    state.connection_error = nil
-    state.now_playing = nil
+    state.connection_status = "disconnected"
     state.playing = false
-    state.playlist = {}
-    state.current_song_index = 0
-    state.audio_buffer = {}
+    state.now_playing = nil
+    state.is_playing_audio = false
+    state.current_playback_session = nil
+    state.sync_warnings = 0
+    
+    state.logger.info("RadioClient", "Disconnected from station")
 end
 
--- AUDIO LOOP (synchronized streaming - FIXED with session validation)
+-- AUDIO LOOP (handle local audio streaming) - GENTLE SYNC
 function radioClient.audioLoop(state, speakers)
     while true do
-        local currentTime = os.epoch("utc") / 1000
-        
-        -- Check for sync timeout - disconnect if no sync for too long
-        if state.connection_status == "connected" and state.last_sync_time > 0 then
-            if (currentTime - state.last_sync_time) > state.sync_timeout then
-                state.logger.warn("RadioClient", "Sync timeout - disconnecting from station")
-                radioClient.disconnectFromStation(state)
-                state.connection_status = "error"
-                state.connection_error = "Lost synchronization with host"
-                
-                -- Stop all audio immediately
-                for _, speaker in ipairs(speakers) do
-                    speaker.stop()
-                end
-                state.is_playing_audio = false
-                state.audio_buffer = {}
-                state.current_playback_session = nil
-                
-                os.queueEvent("redraw_screen")
-                sleep(1)
-                goto continue
-            end
-        end
-        
-        -- Only play audio if we have a valid session and are connected
-        if state.connection_status == "connected" and state.playing and #state.audio_buffer > 0 and state.current_playback_session then
-            -- Play buffered audio
-            local audioData = table.remove(state.audio_buffer, 1)
+        -- Handle local audio streaming (when not using network audio)
+        if state.playing and state.now_playing and not state.is_playing_audio then
+            local thisnowplayingid = state.now_playing.id
             
-            if audioData then
-                state.is_playing_audio = true
+            if state.playing_id ~= thisnowplayingid then
+                state.playing_id = thisnowplayingid
+                state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
+                state.playing_status = 0
+                state.needs_next_chunk = 1
+
+                http.request({url = state.last_download_url, binary = true})
+                state.is_loading = true
+                state.logger.info("RadioClient", "Requesting local audio stream for: " .. state.now_playing.name)
+
+                os.queueEvent("redraw_screen")
+                os.queueEvent("audio_update")
                 
-                -- Create speaker functions for parallel execution
-                local speakerFunctions = {}
+            elseif state.playing_status == 1 and state.needs_next_chunk == 1 then
+                -- Play local audio stream
+                while true do
+                    local chunk = state.player_handle.read(state.size)
+                    if not chunk then
+                        -- Song finished naturally
+                        state.logger.info("RadioClient", "Local song finished")
+                        
+                        if state.player_handle then
+                            state.player_handle.close()
+                            state.player_handle = nil
+                        end
+                        state.needs_next_chunk = 0
+                        state.is_playing_audio = false
+                        break
+                    else
+                        if state.start then
+                            chunk, state.start = state.start .. chunk, nil
+                            state.size = state.size + 4
+                        end
                 
-                for i, speaker in ipairs(speakers) do 
-                    speakerFunctions[i] = function()
-                        local name = peripheral.getName(speaker)
-                        local playVolume = state.muted and 0 or state.volume
-                        if #speakers > 1 then
-                            if speaker.playAudio(audioData, playVolume) then
-                                parallel.waitForAny(
-                                    function()
-                                        repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
-                                    end,
-                                    function()
-                                        local event = os.pullEvent("playback_stopped")
+                        state.buffer = state.decoder(chunk)
+                        
+                        -- Play audio locally (only if not muted)
+                        if not state.muted then
+                            local fn = {}
+                            for i, speaker in ipairs(speakers) do 
+                                fn[i] = function()
+                                    local name = peripheral.getName(speaker)
+                                    local playVolume = state.volume
+                                    
+                                    if #speakers > 1 then
+                                        if speaker.playAudio(state.buffer, playVolume) then
+                                            parallel.waitForAny(
+                                                function()
+                                                    repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                                end,
+                                                function()
+                                                    local event = os.pullEvent("playback_stopped")
+                                                    return
+                                                end
+                                            )
+                                            if not state.playing or state.playing_id ~= thisnowplayingid then
+                                                return
+                                            end
+                                        end
+                                    else
+                                        while not speaker.playAudio(state.buffer, playVolume) do
+                                            parallel.waitForAny(
+                                                function()
+                                                    repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                                end,
+                                                function()
+                                                    local event = os.pullEvent("playback_stopped")
+                                                    return
+                                                end
+                                            )
+                                            if not state.playing or state.playing_id ~= thisnowplayingid then
+                                                return
+                                            end
+                                        end
+                                    end
+                                    if not state.playing or state.playing_id ~= thisnowplayingid then
                                         return
                                     end
-                                )
+                                end
                             end
+                            
+                            local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
+                            if not ok then
+                                state.needs_next_chunk = 2
+                                state.is_error = true
+                                break
+                            end
+                            
+                            state.is_playing_audio = true
                         else
-                            while not speaker.playAudio(audioData, playVolume) do
-                                parallel.waitForAny(
-                                    function()
-                                        repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
-                                    end,
-                                    function()
-                                        local event = os.pullEvent("playback_stopped")
-                                        return
-                                    end
-                                )
-                            end
+                            -- Still process audio timing even when muted
+                            sleep(0.05)
+                            state.is_playing_audio = true
+                        end
+                        
+                        -- Exit if playback stopped
+                        if not state.playing or state.playing_id ~= thisnowplayingid then
+                            break
                         end
                     end
                 end
-                
-                -- Execute all speaker functions in parallel
-                local success, err = pcall(parallel.waitForAll, table.unpack(speakerFunctions))
-                
-                if not success then
-                    state.logger.error("RadioClient", "Audio playback error: " .. tostring(err))
-                end
-                
-                state.is_playing_audio = false
+                os.queueEvent("audio_update")
             end
-        else
-            -- No audio to play or not connected/playing
-            sleep(0.05)
         end
-        
-        ::continue::
+
+        os.pullEvent("audio_update")
     end
 end
 
--- NETWORK LOOP (receive synchronized data)
+-- NETWORK LOOP (radio communication) - FORGIVING SYNC
 function radioClient.networkLoop(state)
     while true do
         local currentTime = os.epoch("utc") / 1000
@@ -848,11 +854,29 @@ function radioClient.networkLoop(state)
             end
         end
         
-        -- Send periodic ping to maintain connection
-        if state.connection_status == "connected" and state.connected_station then
-            if (currentTime - state.last_ping_time) >= state.ping_interval then
-                radioProtocol.sendPing(state.connected_station.station_id)
-                state.last_ping_time = currentTime
+        -- Send periodic ping to host (keep-alive)
+        if state.connected and (currentTime - state.last_ping_time) >= state.ping_interval then
+            radioClient.sendPing(state)
+            state.last_ping_time = currentTime
+        end
+        
+        -- FORGIVING sync timeout check - only warn, don't disconnect immediately
+        if state.connected and state.last_sync_time > 0 then
+            local timeSinceSync = currentTime - state.last_sync_time
+            
+            if timeSinceSync > 30 and state.sync_warnings == 0 then
+                -- First warning at 30 seconds
+                state.logger.warn("RadioClient", "No sync from host for 30 seconds - connection may be unstable")
+                state.sync_warnings = 1
+            elseif timeSinceSync > 60 and state.sync_warnings == 1 then
+                -- Second warning at 60 seconds
+                state.logger.warn("RadioClient", "No sync from host for 60 seconds - host may be unresponsive")
+                state.sync_warnings = 2
+            elseif timeSinceSync > state.sync_timeout and state.sync_warnings >= 2 then
+                -- Only disconnect after multiple warnings and very long timeout
+                state.logger.error("RadioClient", "Host completely unresponsive for " .. state.sync_timeout .. " seconds - disconnecting")
+                radioClient.disconnect(state)
+                return "disconnected"
             end
         end
         
@@ -860,10 +884,11 @@ function radioClient.networkLoop(state)
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
         if message and type(message) == "table" then
-            -- Handle station discovery responses
-            if state.scanning and radioProtocol.isValidMessage(message) then
+            if radioProtocol.isValidMessage(message) then
                 local data = radioProtocol.extractMessageData(message)
-                if data and data.type == "station_announcement" then
+                
+                -- Handle station discovery responses
+                if state.scanning and data and data.type == "station_announcement" then
                     -- Check if we already have this station
                     local found = false
                     for _, station in ipairs(state.stations) do
@@ -897,20 +922,21 @@ function radioClient.networkLoop(state)
                         os.queueEvent("redraw_screen")
                     end
                 end
-            end
-            
-            -- Handle connection responses
-            if state.connection_status == "connecting" and state.connecting_to_station then
-                local clientId = os.getComputerID()
-                local clientChannel = radioProtocol.getClientChannel(clientId)
                 
-                if channel == clientChannel and radioProtocol.isValidMessage(message) then
-                    local data = radioProtocol.extractMessageData(message)
-                    if data and data.type == "join_response" then
+                -- Handle connection responses
+                if state.connection_status == "connecting" and state.connecting_to_station then
+                    local clientId = os.getComputerID()
+                    local clientChannel = radioProtocol.getClientChannel(clientId)
+                    
+                    if channel == clientChannel and data and data.type == "join_response" then
                         if data.success then
                             state.connection_status = "connected"
+                            state.connected = true
+                            state.connected_station_id = state.connecting_to_station.station_id
                             state.connected_station = state.connecting_to_station
                             state.connecting_to_station = nil
+                            state.last_sync_time = currentTime
+                            state.sync_warnings = 0
                             
                             -- Update state from host response
                             if data.now_playing then
@@ -940,169 +966,130 @@ function radioClient.networkLoop(state)
                         os.queueEvent("redraw_screen")
                     end
                 end
+                
+                -- Handle messages from connected station
+                if data and data.station_id == state.connected_station_id then
+                    -- Reset warnings on any valid message from our host
+                    if state.sync_warnings > 0 then
+                        state.logger.info("RadioClient", "Host communication restored")
+                        state.sync_warnings = 0
+                    end
+                    
+                    radioClient.handleNetworkMessage(state, data, replyChannel)
+                end
             end
-            
-            -- Handle other network messages
-            radioClient.handleNetworkMessage(state, message)
         end
         
         sleep(0.1)
     end
 end
 
-function radioClient.handleNetworkMessage(state, message)
-    -- Extract data from protocol message
-    local data = radioProtocol.extractMessageData(message)
-    if not data then
+function radioClient.handleNetworkMessage(state, data, replyChannel)
+    if not data or not data.type then
         return
     end
     
-    if data.type == "audio_chunk" then
-        -- Buffer audio data for synchronized playback (FIXED)
-        if data.audio_data and state.connection_status == "connected" and state.playing then
-            -- Check if this audio chunk belongs to current session
-            if data.playback_session and data.playback_session == state.current_playback_session then
-                table.insert(state.audio_buffer, data.audio_data)
-                
-                -- Limit buffer size to prevent memory issues and maintain sync
-                while #state.audio_buffer > 5 do -- Reduced buffer size for better sync
-                    table.remove(state.audio_buffer, 1)
-                end
-                
-                state.logger.debug("RadioClient", "Audio chunk buffered for session " .. data.playback_session .. ", buffer size: " .. #state.audio_buffer)
-            else
-                state.logger.debug("RadioClient", "Ignoring audio chunk from different session: " .. (data.playback_session or "none") .. " vs " .. (state.current_playback_session or "none"))
-            end
+    local currentTime = os.epoch("utc") / 1000
+    
+    if data.type == "song_change" then
+        state.logger.info("RadioClient", "Host changed song: " .. (data.now_playing and data.now_playing.name or "Unknown"))
+        
+        -- Stop current audio to prevent overlap
+        if state.player_handle then
+            state.player_handle.close()
+            state.player_handle = nil
         end
         
-    elseif data.type == "sync_status" then
-        -- NEW: Handle periodic synchronization updates from host
-        local currentTime = os.epoch("utc") / 1000
-        state.last_sync_time = currentTime
-        
-        -- Check if playback session changed (new song started)
-        if data.playback_session ~= state.current_playback_session then
-            state.logger.info("RadioClient", "Playback session changed: " .. (state.current_playback_session or "none") .. " -> " .. (data.playback_session or "none"))
-            
-            -- Stop current audio immediately to prevent overlap
-            local speakers = state.speakerManager.getRawSpeakers()
-            for _, speaker in ipairs(speakers) do
-                speaker.stop()
-            end
-            state.is_playing_audio = false
-            
-            -- Clear audio buffer
-            state.audio_buffer = {}
-            
-            -- Update session info
-            state.current_playback_session = data.playback_session
-            state.host_playback_start_time = data.playback_start_time or 0
-            
-            -- Calculate client start offset for sync
-            if data.server_time and data.playback_start_time then
-                local timeSinceStart = data.server_time - data.playback_start_time
-                state.client_start_offset = timeSinceStart
-                state.logger.info("RadioClient", "Sync offset calculated: " .. state.client_start_offset .. " seconds")
-            end
-        end
-        
-        -- Update playback state
-        local wasPlaying = state.playing
-        state.playing = data.playing
-        state.now_playing = data.now_playing
-        state.current_song_index = data.current_song_index or 0
-        
-        -- Update playlist size info
-        if data.playlist_size then
-            state.logger.debug("RadioClient", "Host playlist has " .. data.playlist_size .. " songs")
-        end
-        
-        -- Log sync status
-        state.logger.debug("RadioClient", "Sync status received - Playing: " .. tostring(state.playing) .. ", Song: " .. (state.now_playing and state.now_playing.name or "None") .. ", Session: " .. (state.current_playback_session or "none"))
-        
-        -- If playback stopped, ensure we stop too
-        if wasPlaying and not state.playing then
-            local speakers = state.speakerManager.getRawSpeakers()
-            for _, speaker in ipairs(speakers) do
-                speaker.stop()
-            end
-            state.is_playing_audio = false
-            state.audio_buffer = {}
-            state.logger.info("RadioClient", "Stopped playback due to sync status")
-        end
-        
-    elseif data.type == "song_change" then
-        -- Update current song and reset session
-        state.logger.info("RadioClient", "Song change received: " .. (data.now_playing and data.now_playing.name or "None"))
-        
-        -- Stop current audio immediately to prevent overlap
+        -- Stop speakers
         local speakers = state.speakerManager.getRawSpeakers()
         for _, speaker in ipairs(speakers) do
             speaker.stop()
         end
+        
+        -- Update to new song
+        state.now_playing = data.now_playing
+        state.current_song_index = data.current_song_index or 1
+        state.playing = data.playing or false
         state.is_playing_audio = false
         
-        -- Clear audio buffer when song changes
-        state.audio_buffer = {}
+        if state.playing and state.now_playing then
+            state.needs_next_chunk = 1
+            state.decoder = require("cc.audio.dfpwm").make_decoder()
+            state.playing_id = nil -- Force new download
+            os.queueEvent("audio_update")
+        end
         
-        -- Update song info
-        state.now_playing = data.now_playing
-        state.current_song_index = data.current_song_index
-        state.playing = data.playing
-        
-        -- Reset session - will be updated by next sync_status or audio_chunk
-        state.current_playback_session = nil
-        state.host_playback_start_time = 0
-        state.client_start_offset = 0
-        
-        state.logger.info("RadioClient", "Song changed to: " .. (state.now_playing and state.now_playing.name or "None") .. ", session reset")
+        os.queueEvent("redraw_screen")
         
     elseif data.type == "playback_state" then
-        -- Update playback state
-        local wasPlaying = state.playing
-        state.playing = data.playing
-        state.now_playing = data.now_playing
+        state.logger.info("RadioClient", "Host playback state: " .. (data.playing and "playing" or "paused"))
         
-        state.logger.info("RadioClient", "Playback state changed: " .. tostring(state.playing) .. " (was " .. tostring(wasPlaying) .. ")")
+        state.playing = data.playing or false
+        if data.now_playing then
+            state.now_playing = data.now_playing
+        end
         
-        -- If playback stopped, clear buffer and stop speakers immediately
-        if wasPlaying and not state.playing then
+        if not state.playing then
+            -- Stop speakers when host pauses
             local speakers = state.speakerManager.getRawSpeakers()
             for _, speaker in ipairs(speakers) do
                 speaker.stop()
             end
             state.is_playing_audio = false
-            state.audio_buffer = {}
-            state.current_playback_session = nil
-            state.logger.info("RadioClient", "Playback stopped by host - cleared session")
-        elseif not wasPlaying and state.playing then
-            state.logger.info("RadioClient", "Playback started by host")
         end
+        
+        os.queueEvent("redraw_screen")
         
     elseif data.type == "playlist_update" then
-        -- Update playlist
-        state.playlist = data.playlist
-        state.current_song_index = data.current_song_index
+        state.logger.info("RadioClient", "Host updated playlist: " .. #(data.playlist or {}) .. " songs")
         
-        state.logger.info("RadioClient", "Playlist updated: " .. #state.playlist .. " songs")
-        
-    elseif data.type == "broadcast_end" then
-        -- Host ended broadcast
-        radioClient.disconnectFromStation(state)
-        state.connection_status = "error"
-        state.connection_error = "Host ended broadcast"
-        
-        -- Clear audio buffer and stop playback
-        state.audio_buffer = {}
-        if state.speakerManager then
-            state.speakerManager.stopAll()
+        if data.playlist then
+            state.playlist = data.playlist
+        end
+        if data.current_song_index then
+            state.current_song_index = data.current_song_index
         end
         
+        os.queueEvent("redraw_screen")
+        
+    elseif data.type == "audio_chunk" then
+        -- Handle audio streaming from host
+        if data.audio_data and state.playing and not state.muted then
+            -- Only play if we're supposed to be playing and session matches
+            if data.playback_session == state.current_playback_session then
+                radioClient.playAudioChunk(state, data.audio_data)
+            end
+        end
+        
+    elseif data.type == "sync_status" then
+        -- Use the new gentle sync system
+        radioClient.handleSyncStatus(state, data)
+        os.queueEvent("redraw_screen")
+        
+    elseif data.type == "broadcast_end" then
         state.logger.info("RadioClient", "Host ended broadcast")
         
+        -- Stop audio but don't disconnect - stay connected for when broadcast resumes
+        if state.player_handle then
+            state.player_handle.close()
+            state.player_handle = nil
+        end
+        
+        local speakers = state.speakerManager.getRawSpeakers()
+        for _, speaker in ipairs(speakers) do
+            speaker.stop()
+        end
+        
+        state.playing = false
+        state.now_playing = nil
+        state.is_playing_audio = false
+        
+        os.queueEvent("redraw_screen")
+        
     elseif data.type == "ping_response" then
-        -- Keep-alive response received
-        state.last_ping_response = os.epoch("utc")
+        -- Keep-alive response from host
+        state.last_sync_time = currentTime
+        state.sync_warnings = 0 -- Reset warnings on ping response
     end
 end
 
@@ -1128,6 +1115,127 @@ function radioClient.cleanup(state)
     end
     
     state.logger.info("RadioClient", "Radio client cleaned up")
+end
+
+function radioClient.handleSyncStatus(state, data)
+    local currentTime = os.epoch("utc") / 1000
+    state.last_sync_time = currentTime
+    
+    -- Update host timing information
+    state.host_playback_start_time = data.playback_start_time or 0
+    
+    -- Check if this is a new playback session
+    if data.playback_session and data.playback_session ~= state.current_playback_session then
+        state.logger.info("RadioClient", "New playback session detected: " .. data.playback_session)
+        
+        -- Stop current audio to prevent overlap
+        if state.player_handle then
+            state.player_handle.close()
+            state.player_handle = nil
+        end
+        
+        -- Stop speakers
+        local speakers = state.speakerManager.getRawSpeakers()
+        for _, speaker in ipairs(speakers) do
+            speaker.stop()
+        end
+        
+        -- Update session
+        state.current_playback_session = data.playback_session
+        state.is_playing_audio = false
+        
+        -- Reset audio state for new session
+        if data.playing and data.now_playing then
+            state.now_playing = data.now_playing
+            state.playing = true
+            state.needs_next_chunk = 1
+            state.decoder = require("cc.audio.dfpwm").make_decoder()
+            state.playing_id = nil -- Force new download
+            
+            state.logger.info("RadioClient", "Starting new session: " .. data.now_playing.name)
+            os.queueEvent("audio_update")
+        end
+    end
+    
+    -- Gentle synchronization - only update if significantly different
+    if data.now_playing and state.now_playing then
+        if data.now_playing.id ~= state.now_playing.id then
+            state.logger.info("RadioClient", "Song change detected via sync")
+            state.now_playing = data.now_playing
+            state.current_song_index = data.current_song_index or 1
+            
+            -- Gently restart audio for new song
+            if state.player_handle then
+                state.player_handle.close()
+                state.player_handle = nil
+            end
+            
+            state.playing_id = nil
+            state.needs_next_chunk = 1
+            os.queueEvent("audio_update")
+        end
+    end
+    
+    -- Update playback state gently
+    if data.playing ~= state.playing then
+        state.logger.info("RadioClient", "Playback state sync: " .. (data.playing and "playing" or "paused"))
+        state.playing = data.playing
+        
+        if not state.playing then
+            -- Pause - stop speakers but don't disconnect
+            local speakers = state.speakerManager.getRawSpeakers()
+            for _, speaker in ipairs(speakers) do
+                speaker.stop()
+            end
+            state.is_playing_audio = false
+        end
+    end
+    
+    -- Update playlist if provided
+    if data.playlist and type(data.playlist) == "table" then
+        state.playlist = data.playlist
+        state.current_song_index = data.current_song_index or 1
+    end
+    
+    -- Reset sync warnings since we got a good sync
+    state.sync_warnings = 0
+    
+    state.logger.info("RadioClient", "Gentle sync completed - Session: " .. (state.current_playback_session or "none"))
+end
+
+function radioClient.playAudioChunk(state, audioData)
+    -- Simple audio chunk playback for network streaming
+    if not audioData or state.muted then
+        return
+    end
+    
+    local speakers = state.speakerManager.getRawSpeakers()
+    if #speakers == 0 then
+        return
+    end
+    
+    -- Play audio chunk on all speakers
+    for _, speaker in ipairs(speakers) do
+        local success = speaker.playAudio(audioData, state.volume)
+        if success then
+            state.is_playing_audio = true
+        end
+    end
+end
+
+function radioClient.sendPing(state)
+    if not state.connected or not state.connected_station_id then
+        return
+    end
+    
+    local pingMessage = {
+        type = "listener_ping",
+        listener_id = os.getComputerID(),
+        timestamp = os.epoch("utc")
+    }
+    
+    local stationChannel = radioProtocol.getStationChannel(state.connected_station_id)
+    radioProtocol.sendToChannel(stationChannel, pingMessage)
 end
 
 return radioClient 
