@@ -1513,11 +1513,15 @@ function radioHost.performSearch(state)
     state.in_search_result = false
     state.clicked_result = nil
     
-    -- Build search URL
-    local searchUrl = state.api_base_url .. "search?q=" .. textutils.urlEncode(state.last_search)
+    -- Build search URL (same format as YouTube player)
+    local searchUrl = state.api_base_url .. "?v=" .. state.version .. "&search=" .. textutils.urlEncode(state.last_search)
     state.last_search_url = searchUrl
     
     state.logger.info("RadioHost", "Search URL: " .. searchUrl)
+    state.logger.info("RadioHost", "Making HTTP request to: " .. searchUrl)
+    
+    -- Make asynchronous HTTP request (like YouTube player)
+    http.request(searchUrl)
 end
 
 -- AUDIO LOOP (like YouTube player)
@@ -1547,50 +1551,67 @@ function radioHost.audioLoop(state, speakers)
     end
 end
 
--- HTTP LOOP (like YouTube player)
+-- HTTP LOOP (like YouTube player - asynchronous)
 function radioHost.httpLoop(state)
     while true do
-        if state.last_search_url then
-            local searchUrl = state.last_search_url
-            state.last_search_url = nil
-            
-            state.logger.info("RadioHost", "Making HTTP request to: " .. searchUrl)
-            
-            local response = http.get(searchUrl)
-            if response then
-                local responseText = response.readAll()
-                response.close()
+        parallel.waitForAny(
+            function()
+                local event, url, handle = os.pullEvent("http_success")
                 
-                local success, data = pcall(textutils.unserialiseJSON, responseText)
-                if success and data and data.results then
-                    state.search_results = data.results
-                    state.logger.info("RadioHost", "Search completed: " .. #data.results .. " results")
-                else
-                    state.search_error = true
-                    state.logger.error("RadioHost", "Failed to parse search results")
+                if url == state.last_search_url then
+                    local success, results = pcall(function()
+                        local responseText = handle.readAll()
+                        handle.close()
+                        if not responseText or responseText == "" then
+                            error("Empty response from search API")
+                        end
+                        return textutils.unserialiseJSON(responseText)
+                    end)
+                    
+                    if success and results then
+                        state.search_results = results
+                        state.search_error = false
+                        state.logger.info("RadioHost", "Search completed: " .. #results .. " results found")
+                    else
+                        state.search_results = nil
+                        state.search_error = true
+                        state.logger.error("RadioHost", "Failed to parse search results")
+                    end
+                    os.queueEvent("redraw_screen")
                 end
-            else
-                state.search_error = true
-                state.logger.error("RadioHost", "HTTP request failed")
+                
+                if url == state.last_download_url then
+                    state.is_loading = false
+                    state.player_handle = handle
+                    state.start = handle.read(4)
+                    state.size = 16 * 1024 - 4
+                    state.playing_status = 1
+                    state.logger.info("RadioHost", "Audio stream ready")
+                    os.queueEvent("redraw_screen")
+                    os.queueEvent("audio_update")
+                end
+            end,
+            function()
+                local event, url = os.pullEvent("http_failure")
+                
+                if url == state.last_search_url then
+                    state.search_error = true
+                    state.search_results = nil
+                    state.logger.error("RadioHost", "HTTP request failed")
+                    os.queueEvent("redraw_screen")
+                end
+                
+                if url == state.last_download_url then
+                    state.is_loading = false
+                    state.is_error = true
+                    state.playing = false
+                    state.playing_id = nil
+                    state.logger.error("RadioHost", "Audio stream request failed")
+                    os.queueEvent("redraw_screen")
+                    os.queueEvent("audio_update")
+                end
             end
-        end
-        
-        -- Handle song download requests
-        if state.needs_next_chunk > 0 and state.now_playing then
-            local downloadUrl = state.api_base_url .. "download?id=" .. textutils.urlEncode(state.now_playing.id)
-            
-            local response = http.get(downloadUrl)
-            if response then
-                state.player_handle = response
-                state.needs_next_chunk = 0
-                state.logger.info("RadioHost", "Started downloading: " .. state.now_playing.name)
-            else
-                state.logger.error("RadioHost", "Failed to download song")
-                state.is_error = true
-            end
-        end
-        
-        sleep(0.1)
+        )
     end
 end
 
