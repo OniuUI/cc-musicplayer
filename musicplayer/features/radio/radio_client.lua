@@ -35,10 +35,11 @@ function radioClient.init(systemModules)
         playlist = {},
         current_song_index = 0,
         
-        -- Audio streaming
+        -- Audio streaming (FIXED)
         audio_buffer = {},
         decoder = require("cc.audio.dfpwm").make_decoder(),
         volume = 1.5,
+        is_playing_audio = false, -- Track if we're actively playing audio
         
         -- Network state
         protocol_available = false,
@@ -585,7 +586,7 @@ function radioClient.handleNowPlayingClicks(state, x, y, speakers)
         local sliderPos = x - 4
         local newVolume = (sliderPos / 20) * 3.0
         state.volume = math.max(0, math.min(3.0, newVolume))
-        state.speakerManager.setVolume(speakers, state.volume)
+        state.speakerManager.setVolume(state.volume)
         state.logger.info("RadioClient", "Volume set to " .. state.volume)
         return
     end
@@ -706,18 +707,70 @@ function radioClient.disconnectFromStation(state)
     state.audio_buffer = {}
 end
 
--- AUDIO LOOP (synchronized streaming)
+-- AUDIO LOOP (synchronized streaming - FIXED)
 function radioClient.audioLoop(state, speakers)
     while true do
-        if state.connection_status == "connected" and #state.audio_buffer > 0 then
+        if state.connection_status == "connected" and state.playing and #state.audio_buffer > 0 then
             -- Play buffered audio
             local audioData = table.remove(state.audio_buffer, 1)
             
-            while not state.speakerManager.playAudio(speakers, audioData) do
-                os.pullEvent("speaker_audio_empty")
+            if audioData then
+                state.is_playing_audio = true
+                
+                -- Create speaker functions for parallel execution
+                local speakerFunctions = {}
+                
+                for i, speaker in ipairs(speakers) do
+                    speakerFunctions[i] = function()
+                        local name = peripheral.getName(speaker)
+                        
+                        if #speakers > 1 then
+                            -- Multiple speakers: wait for audio buffer to be consumed
+                            if speaker.playAudio(audioData, state.volume) then
+                                parallel.waitForAny(
+                                    function()
+                                        repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                    end,
+                                    function()
+                                        os.pullEvent("playback_stopped")
+                                        return
+                                    end
+                                )
+                            end
+                        else
+                            -- Single speaker: retry until buffer is accepted
+                            while not speaker.playAudio(audioData, state.volume) do
+                                parallel.waitForAny(
+                                    function()
+                                        repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                    end,
+                                    function()
+                                        os.pullEvent("playback_stopped")
+                                        return
+                                    end
+                                )
+                                
+                                -- Check if we should stop playing
+                                if not state.playing or state.connection_status ~= "connected" then
+                                    return
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- Execute all speaker functions in parallel
+                local success, err = pcall(parallel.waitForAll, table.unpack(speakerFunctions))
+                
+                if not success then
+                    state.logger.error("RadioClient", "Audio playback error: " .. tostring(err))
+                end
+                
+                state.is_playing_audio = false
             end
         else
-            sleep(0.05) -- Small delay when no audio to play
+            -- No audio to play or not connected/playing
+            sleep(0.05)
         end
     end
 end
@@ -858,14 +911,16 @@ function radioClient.handleNetworkMessage(state, message)
     end
     
     if data.type == "audio_chunk" then
-        -- Buffer audio data for synchronized playback
-        if data.audio_data then
+        -- Buffer audio data for synchronized playback (FIXED)
+        if data.audio_data and state.connection_status == "connected" and state.playing then
             table.insert(state.audio_buffer, data.audio_data)
             
-            -- Limit buffer size to prevent memory issues
-            if #state.audio_buffer > 10 then
+            -- Limit buffer size to prevent memory issues and maintain sync
+            while #state.audio_buffer > 5 do -- Reduced buffer size for better sync
                 table.remove(state.audio_buffer, 1)
             end
+            
+            state.logger.debug("RadioClient", "Audio chunk buffered, buffer size: " .. #state.audio_buffer)
         end
         
     elseif data.type == "song_change" then
@@ -874,12 +929,32 @@ function radioClient.handleNetworkMessage(state, message)
         state.current_song_index = data.current_song_index
         state.playing = data.playing
         
+        -- Clear audio buffer when song changes
+        state.audio_buffer = {}
+        
+        -- Stop current audio playback
+        if state.speakerManager then
+            state.speakerManager.stopAll()
+        end
+        
         state.logger.info("RadioClient", "Song changed: " .. (state.now_playing and state.now_playing.name or "None"))
         
     elseif data.type == "playback_state" then
         -- Update playback state
+        local wasPlaying = state.playing
         state.playing = data.playing
         state.now_playing = data.now_playing
+        
+        -- If playback stopped, clear buffer and stop speakers
+        if wasPlaying and not state.playing then
+            state.audio_buffer = {}
+            if state.speakerManager then
+                state.speakerManager.stopAll()
+            end
+            state.logger.info("RadioClient", "Playback stopped by host")
+        elseif not wasPlaying and state.playing then
+            state.logger.info("RadioClient", "Playback started by host")
+        end
         
     elseif data.type == "playlist_update" then
         -- Update playlist
@@ -894,6 +969,12 @@ function radioClient.handleNetworkMessage(state, message)
         state.connection_status = "error"
         state.connection_error = "Host ended broadcast"
         
+        -- Clear audio buffer and stop playback
+        state.audio_buffer = {}
+        if state.speakerManager then
+            state.speakerManager.stopAll()
+        end
+        
         state.logger.info("RadioClient", "Host ended broadcast")
         
     elseif data.type == "ping_response" then
@@ -902,8 +983,17 @@ function radioClient.handleNetworkMessage(state, message)
     end
 end
 
--- CLEANUP
+-- CLEANUP (FIXED)
 function radioClient.cleanup(state)
+    -- Stop audio playback
+    if state.speakerManager then
+        state.speakerManager.stopAll()
+    end
+    
+    -- Clear audio buffer
+    state.audio_buffer = {}
+    state.is_playing_audio = false
+    
     -- Disconnect from station
     if state.connected_station then
         radioClient.disconnectFromStation(state)

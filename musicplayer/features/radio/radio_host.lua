@@ -50,6 +50,7 @@ function radioHost.init(systemModules)
         -- Playback state (like YouTube player)
         playing = false,
         volume = 1.5,
+        muted = false, -- NEW: Mute state for host
         looping = 1, -- 0=off, 1=playlist, 2=song
         
         -- Audio streaming (like YouTube player)
@@ -567,6 +568,7 @@ function radioHost.startBroadcast(state)
         state.playing = true
         state.needs_next_chunk = 1
         state.decoder = require("cc.audio.dfpwm").make_decoder()
+        state.logger.info("RadioHost", "Starting playback of first song: " .. state.now_playing.name)
     end
     
     -- Open modem channels for broadcasting and receiving join requests
@@ -1178,16 +1180,17 @@ function radioHost.drawNowPlaying(state)
     -- Volume control (like YouTube player)
     term.setTextColor(colors.yellow)
     term.setCursorPos(3, 10)
-    term.write("Volume: ")
-    
-    local volumePercent = math.floor((state.volume / 3.0) * 100)
-    term.setTextColor(colors.white)
-    term.write(volumePercent .. "%")
+    if state.muted then
+        term.write("Volume: MUTED")
+    else
+        local volumePercent = math.floor((state.volume / 3.0) * 100)
+        term.write("Volume: " .. volumePercent .. "%")
+    end
     
     -- Volume slider
     term.setCursorPos(3, 11)
     local sliderWidth = 20
-    local fillWidth = math.floor((state.volume / 3.0) * sliderWidth)
+    local fillWidth = state.muted and 0 or math.floor((state.volume / 3.0) * sliderWidth)
     
     term.setBackgroundColor(colors.gray)
     term.setTextColor(colors.white)
@@ -1195,7 +1198,7 @@ function radioHost.drawNowPlaying(state)
     
     for i = 1, sliderWidth do
         if i <= fillWidth then
-            term.setBackgroundColor(colors.cyan)
+            term.setBackgroundColor(state.muted and colors.red or colors.cyan)
             term.write(" ")
         else
             term.setBackgroundColor(colors.gray)
@@ -1205,6 +1208,18 @@ function radioHost.drawNowPlaying(state)
     
     term.setBackgroundColor(colors.gray)
     term.write("]")
+    
+    -- Mute/Unmute button
+    term.setCursorPos(25, 11)
+    if state.muted then
+        term.setBackgroundColor(colors.red)
+        term.setTextColor(colors.white)
+        term.write(" 🔇 Unmute ")
+    else
+        term.setBackgroundColor(colors.orange)
+        term.setTextColor(colors.black)
+        term.write(" 🔊 Mute ")
+    end
     
     -- Playback controls with beautiful styling
     local controlY = 13
@@ -1324,6 +1339,20 @@ function radioHost.uiLoop(state, speakers)
                         table.insert(state.playlist, selectedSong)
                         state.logger.info("RadioHost", "Added song to playlist: " .. selectedSong.name)
                         
+                        -- Auto-start playing if broadcasting and no song is playing
+                        if state.is_broadcasting and not state.now_playing then
+                            state.current_song_index = #state.playlist
+                            state.now_playing = selectedSong
+                            state.playing = true
+                            state.needs_next_chunk = 1
+                            state.decoder = require("cc.audio.dfpwm").make_decoder()
+                            state.logger.info("RadioHost", "Auto-started playing: " .. selectedSong.name)
+                            
+                            -- Broadcast song change to listeners
+                            radioHost.broadcastSongChange(state)
+                            os.queueEvent("audio_update")
+                        end
+                        
                         -- Broadcast playlist update to listeners
                         if state.is_broadcasting then
                             radioHost.broadcastPlaylistUpdate(state)
@@ -1337,10 +1366,27 @@ function radioHost.uiLoop(state, speakers)
                     if state.search_results and state.clicked_result then
                         local selectedSong = state.search_results[state.clicked_result]
                         
-                        -- Insert after current song
-                        local insertPos = state.current_song_index + 1
-                        table.insert(state.playlist, insertPos, selectedSong)
-                        state.logger.info("RadioHost", "Added song to play next: " .. selectedSong.name)
+                        if state.now_playing then
+                            -- Insert after current song
+                            local insertPos = state.current_song_index + 1
+                            table.insert(state.playlist, insertPos, selectedSong)
+                            state.logger.info("RadioHost", "Added song to play next: " .. selectedSong.name)
+                        else
+                            -- No song playing, add and start playing
+                            table.insert(state.playlist, selectedSong)
+                            state.current_song_index = #state.playlist
+                            state.now_playing = selectedSong
+                            state.playing = true
+                            state.needs_next_chunk = 1
+                            state.decoder = require("cc.audio.dfpwm").make_decoder()
+                            state.logger.info("RadioHost", "Added and started playing: " .. selectedSong.name)
+                            
+                            -- Broadcast song change to listeners
+                            if state.is_broadcasting then
+                                radioHost.broadcastSongChange(state)
+                            end
+                            os.queueEvent("audio_update")
+                        end
                         
                         -- Broadcast playlist update to listeners
                         if state.is_broadcasting then
@@ -1450,12 +1496,25 @@ end
 
 function radioHost.handleNowPlayingClicks(state, x, y, speakers)
     -- Volume slider click
-    if y == 11 and x >= 4 and x <= 24 then
+    if y == 11 and x >= 4 and x <= 24 and not state.muted then
         local sliderPos = x - 4
         local newVolume = (sliderPos / 20) * 3.0
         state.volume = math.max(0, math.min(3.0, newVolume))
-        state.speakerManager.setVolume(speakers, state.volume)
+        state.speakerManager.setVolume(state.volume)
         state.logger.info("RadioHost", "Volume set to " .. state.volume)
+        return
+    end
+    
+    -- Mute/Unmute button
+    if y == 11 and x >= 25 and x <= 36 then
+        state.muted = not state.muted
+        if state.muted then
+            state.speakerManager.setVolume(0)
+            state.logger.info("RadioHost", "Audio muted")
+        else
+            state.speakerManager.setVolume(state.volume)
+            state.logger.info("RadioHost", "Audio unmuted")
+        end
         return
     end
     
@@ -1531,7 +1590,7 @@ function radioHost.performSearch(state)
     http.request(searchUrl)
 end
 
--- AUDIO LOOP (like YouTube player)
+-- AUDIO LOOP (like YouTube player - FIXED)
 function radioHost.audioLoop(state, speakers)
     while true do
         -- AUDIO STREAMING (like YouTube player)
@@ -1560,6 +1619,7 @@ function radioHost.audioLoop(state, speakers)
                         
                         if state.player_handle then
                             state.player_handle.close()
+                            state.player_handle = nil
                         end
                         state.needs_next_chunk = 0
                         break
@@ -1571,56 +1631,61 @@ function radioHost.audioLoop(state, speakers)
                 
                         state.buffer = state.decoder(chunk)
                         
-                        -- Play audio on local speakers
-                        local fn = {}
-                        for i, speaker in ipairs(speakers) do 
-                            fn[i] = function()
-                                local name = peripheral.getName(speaker)
-                                if #speakers > 1 then
-                                    if speaker.playAudio(state.buffer, state.volume) then
-                                        parallel.waitForAny(
-                                            function()
-                                                repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
-                                            end,
-                                            function()
-                                                local event = os.pullEvent("playback_stopped")
+                        -- Play audio on local speakers (FIXED - only if not muted)
+                        if not state.muted then
+                            local fn = {}
+                            for i, speaker in ipairs(speakers) do 
+                                fn[i] = function()
+                                    local name = peripheral.getName(speaker)
+                                    if #speakers > 1 then
+                                        if speaker.playAudio(state.buffer, state.volume) then
+                                            parallel.waitForAny(
+                                                function()
+                                                    repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                                end,
+                                                function()
+                                                    local event = os.pullEvent("playback_stopped")
+                                                    return
+                                                end
+                                            )
+                                            if not state.playing or state.playing_id ~= thisnowplayingid then
                                                 return
                                             end
-                                        )
-                                        if not state.playing or state.playing_id ~= thisnowplayingid then
-                                            return
                                         end
-                                    end
-                                else
-                                    while not speaker.playAudio(state.buffer, state.volume) do
-                                        parallel.waitForAny(
-                                            function()
-                                                repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
-                                            end,
-                                            function()
-                                                local event = os.pullEvent("playback_stopped")
+                                    else
+                                        while not speaker.playAudio(state.buffer, state.volume) do
+                                            parallel.waitForAny(
+                                                function()
+                                                    repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                                end,
+                                                function()
+                                                    local event = os.pullEvent("playback_stopped")
+                                                    return
+                                                end
+                                            )
+                                            if not state.playing or state.playing_id ~= thisnowplayingid then
                                                 return
                                             end
-                                        )
-                                        if not state.playing or state.playing_id ~= thisnowplayingid then
-                                            return
                                         end
                                     end
-                                end
-                                if not state.playing or state.playing_id ~= thisnowplayingid then
-                                    return
+                                    if not state.playing or state.playing_id ~= thisnowplayingid then
+                                        return
+                                    end
                                 end
                             end
+                            
+                            local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
+                            if not ok then
+                                state.needs_next_chunk = 2
+                                state.is_error = true
+                                break
+                            end
+                        else
+                            -- Still need to process audio for network streaming even when muted
+                            sleep(0.05)
                         end
                         
-                        local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
-                        if not ok then
-                            state.needs_next_chunk = 2
-                            state.is_error = true
-                            break
-                        end
-                        
-                        -- Broadcast audio chunk to listeners
+                        -- Broadcast audio chunk to listeners (ALWAYS - even when host is muted)
                         if state.is_broadcasting then
                             radioHost.broadcastAudioChunk(state, state.buffer)
                         end
@@ -1734,13 +1799,20 @@ function radioHost.networkLoop(state)
     end
 end
 
--- PLAYBACK CONTROL FUNCTIONS
+-- PLAYBACK CONTROL FUNCTIONS (FIXED)
 function radioHost.togglePlayback(state, speakers)
     if state.now_playing then
         state.playing = not state.playing
         
         if state.playing and not state.player_handle then
             state.needs_next_chunk = 1
+            os.queueEvent("audio_update")
+        elseif not state.playing then
+            -- Stop speakers when pausing
+            for _, speaker in ipairs(speakers) do
+                speaker.stop()
+            end
+            os.queueEvent("playback_stopped")
         end
         
         state.logger.info("RadioHost", "Playback " .. (state.playing and "started" or "paused"))
@@ -1749,6 +1821,20 @@ function radioHost.togglePlayback(state, speakers)
         if state.is_broadcasting then
             radioHost.broadcastPlaybackState(state)
         end
+    elseif #state.playlist > 0 then
+        -- Start playing first song if no song is selected
+        state.current_song_index = 1
+        state.now_playing = state.playlist[1]
+        state.playing = true
+        state.needs_next_chunk = 1
+        state.decoder = require("cc.audio.dfpwm").make_decoder()
+        state.logger.info("RadioHost", "Started playing: " .. state.now_playing.name)
+        
+        if state.is_broadcasting then
+            radioHost.broadcastSongChange(state)
+        end
+        
+        os.queueEvent("audio_update")
     end
 end
 
@@ -1762,6 +1848,12 @@ function radioHost.nextSong(state, speakers)
         state.player_handle.close()
         state.player_handle = nil
     end
+    
+    -- Stop speakers
+    for _, speaker in ipairs(speakers) do
+        speaker.stop()
+    end
+    os.queueEvent("playback_stopped")
     
     -- Move to next song
     if state.looping == 2 then -- Song loop
@@ -1786,6 +1878,7 @@ function radioHost.nextSong(state, speakers)
     state.now_playing = state.playlist[state.current_song_index]
     state.needs_next_chunk = 1
     state.decoder = require("cc.audio.dfpwm").make_decoder()
+    state.playing_id = nil -- Reset to trigger new download
     
     state.logger.info("RadioHost", "Next song: " .. state.now_playing.name)
     
@@ -1793,6 +1886,8 @@ function radioHost.nextSong(state, speakers)
     if state.is_broadcasting then
         radioHost.broadcastSongChange(state)
     end
+    
+    os.queueEvent("audio_update")
 end
 
 function radioHost.previousSong(state, speakers)
@@ -1805,6 +1900,12 @@ function radioHost.previousSong(state, speakers)
         state.player_handle.close()
         state.player_handle = nil
     end
+    
+    -- Stop speakers
+    for _, speaker in ipairs(speakers) do
+        speaker.stop()
+    end
+    os.queueEvent("playback_stopped")
     
     -- Move to previous song
     if state.current_song_index > 1 then
@@ -1820,6 +1921,7 @@ function radioHost.previousSong(state, speakers)
     state.now_playing = state.playlist[state.current_song_index]
     state.needs_next_chunk = 1
     state.decoder = require("cc.audio.dfpwm").make_decoder()
+    state.playing_id = nil -- Reset to trigger new download
     
     state.logger.info("RadioHost", "Previous song: " .. state.now_playing.name)
     
@@ -1827,6 +1929,8 @@ function radioHost.previousSong(state, speakers)
     if state.is_broadcasting then
         radioHost.broadcastSongChange(state)
     end
+    
+    os.queueEvent("audio_update")
 end
 
 -- PLAYLIST MANAGEMENT
