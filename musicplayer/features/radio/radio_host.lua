@@ -343,7 +343,7 @@ function radioHost.drawPlaylist(state)
         local maxResults = math.min(5, #state.search_results)
         
         for i = 1, maxResults do
-            local song = state.search_results[i]
+            local result = state.search_results[i]
             local y = startY + (i - 1)
             
             -- Beautiful result styling
@@ -351,17 +351,29 @@ function radioHost.drawPlaylist(state)
             term.setTextColor(colors.black)
             term.setCursorPos(3, y)
             
-            local songName = song.name
-            if #songName > 25 then
-                songName = songName:sub(1, 22) .. "..."
+            if result.type == "playlist" then
+                -- Playlist display (like YouTube player)
+                local playlistName = result.name
+                if #playlistName > 20 then
+                    playlistName = playlistName:sub(1, 17) .. "..."
+                end
+                
+                local songCount = #result.playlist_items .. " songs"
+                term.write(" 📋 " .. playlistName .. " [Playlist] (" .. songCount .. ")" .. string.rep(" ", 45 - #playlistName - #songCount - 15))
+            else
+                -- Individual song display
+                local songName = result.name
+                if #songName > 25 then
+                    songName = songName:sub(1, 22) .. "..."
+                end
+                
+                local artistName = result.artist or "Unknown Artist"
+                if #artistName > 15 then
+                    artistName = artistName:sub(1, 12) .. "..."
+                end
+                
+                term.write(" ♪ " .. songName .. " - " .. artistName .. string.rep(" ", 45 - #songName - #artistName))
             end
-            
-            local artistName = song.artist or "Unknown Artist"
-            if #artistName > 15 then
-                artistName = artistName:sub(1, 12) .. "..."
-            end
-            
-            term.write(" ♪ " .. songName .. " - " .. artistName .. string.rep(" ", 45 - #songName - #artistName))
         end
     elseif state.search_error then
         term.setBackgroundColor(colors.black)
@@ -930,17 +942,28 @@ function radioHost.redrawScreen(state)
         
         -- Song info with yellow accent
         if state.search_results and state.clicked_result then
-            local selectedSong = state.search_results[state.clicked_result]
+            local selectedResult = state.search_results[state.clicked_result]
             term.setBackgroundColor(colors.black)
             term.setTextColor(colors.yellow)
             term.setCursorPos(2, 3)
-            term.write("Add to Radio Playlist:")
-            term.setTextColor(colors.white)
-            term.setCursorPos(2, 4)
-            term.write("♪ " .. selectedSong.name)
-            term.setTextColor(colors.lightGray)
-            term.setCursorPos(2, 5)
-            term.write("  " .. selectedSong.artist)
+            
+            if selectedResult.type == "playlist" then
+                term.write("Add Playlist to Radio:")
+                term.setTextColor(colors.white)
+                term.setCursorPos(2, 4)
+                term.write("📋 " .. selectedResult.name)
+                term.setTextColor(colors.lightGray)
+                term.setCursorPos(2, 5)
+                term.write("  " .. #selectedResult.playlist_items .. " songs")
+            else
+                term.write("Add Song to Radio:")
+                term.setTextColor(colors.white)
+                term.setCursorPos(2, 4)
+                term.write("♪ " .. selectedResult.name)
+                term.setTextColor(colors.lightGray)
+                term.setCursorPos(2, 5)
+                term.write("  " .. selectedResult.artist)
+            end
         end
 
         -- Beautiful action buttons with contrasting colors
@@ -1335,22 +1358,47 @@ function radioHost.uiLoop(state, speakers)
                 if y == 7 then -- Add to Playlist
                     state.logger.info("RadioHost", "Add to playlist clicked")
                     if state.search_results and state.clicked_result then
-                        local selectedSong = state.search_results[state.clicked_result]
-                        table.insert(state.playlist, selectedSong)
-                        state.logger.info("RadioHost", "Added song to playlist: " .. selectedSong.name)
+                        local selectedResult = state.search_results[state.clicked_result]
                         
-                        -- Auto-start playing if broadcasting and no song is playing
-                        if state.is_broadcasting and not state.now_playing then
-                            state.current_song_index = #state.playlist
-                            state.now_playing = selectedSong
-                            state.playing = true
-                            state.needs_next_chunk = 1
-                            state.decoder = require("cc.audio.dfpwm").make_decoder()
-                            state.logger.info("RadioHost", "Auto-started playing: " .. selectedSong.name)
+                        -- Handle playlist vs individual song (like YouTube player)
+                        if selectedResult.type == "playlist" then
+                            -- Add all songs from playlist
+                            for i = 1, #selectedResult.playlist_items do
+                                table.insert(state.playlist, selectedResult.playlist_items[i])
+                            end
+                            state.logger.info("RadioHost", "Added playlist to radio playlist: " .. #selectedResult.playlist_items .. " songs")
                             
-                            -- Broadcast song change to listeners
-                            radioHost.broadcastSongChange(state)
-                            os.queueEvent("audio_update")
+                            -- Auto-start playing first song if broadcasting and no song is playing
+                            if state.is_broadcasting and not state.now_playing and #selectedResult.playlist_items > 0 then
+                                state.current_song_index = #state.playlist - #selectedResult.playlist_items + 1
+                                state.now_playing = selectedResult.playlist_items[1]
+                                state.playing = true
+                                state.needs_next_chunk = 1
+                                state.decoder = require("cc.audio.dfpwm").make_decoder()
+                                state.logger.info("RadioHost", "Auto-started playing first song from playlist: " .. selectedResult.playlist_items[1].name)
+                                
+                                -- Broadcast song change to listeners
+                                radioHost.broadcastSongChange(state)
+                                os.queueEvent("audio_update")
+                            end
+                        else
+                            -- Add individual song
+                            table.insert(state.playlist, selectedResult)
+                            state.logger.info("RadioHost", "Added song to playlist: " .. selectedResult.name)
+                            
+                            -- Auto-start playing if broadcasting and no song is playing
+                            if state.is_broadcasting and not state.now_playing then
+                                state.current_song_index = #state.playlist
+                                state.now_playing = selectedResult
+                                state.playing = true
+                                state.needs_next_chunk = 1
+                                state.decoder = require("cc.audio.dfpwm").make_decoder()
+                                state.logger.info("RadioHost", "Auto-started playing: " .. selectedResult.name)
+                                
+                                -- Broadcast song change to listeners
+                                radioHost.broadcastSongChange(state)
+                                os.queueEvent("audio_update")
+                            end
                         end
                         
                         -- Broadcast playlist update to listeners
@@ -1364,28 +1412,58 @@ function radioHost.uiLoop(state, speakers)
                 elseif y == 9 then -- Add & Play Next
                     state.logger.info("RadioHost", "Add & play next clicked")
                     if state.search_results and state.clicked_result then
-                        local selectedSong = state.search_results[state.clicked_result]
+                        local selectedResult = state.search_results[state.clicked_result]
                         
-                        if state.now_playing then
-                            -- Insert after current song
-                            local insertPos = state.current_song_index + 1
-                            table.insert(state.playlist, insertPos, selectedSong)
-                            state.logger.info("RadioHost", "Added song to play next: " .. selectedSong.name)
-                        else
-                            -- No song playing, add and start playing
-                            table.insert(state.playlist, selectedSong)
-                            state.current_song_index = #state.playlist
-                            state.now_playing = selectedSong
-                            state.playing = true
-                            state.needs_next_chunk = 1
-                            state.decoder = require("cc.audio.dfpwm").make_decoder()
-                            state.logger.info("RadioHost", "Added and started playing: " .. selectedSong.name)
-                            
-                            -- Broadcast song change to listeners
-                            if state.is_broadcasting then
-                                radioHost.broadcastSongChange(state)
+                        -- Handle playlist vs individual song (like YouTube player)
+                        if selectedResult.type == "playlist" then
+                            -- Add all songs from playlist after current song
+                            if state.now_playing then
+                                local insertPos = state.current_song_index + 1
+                                for i = #selectedResult.playlist_items, 1, -1 do
+                                    table.insert(state.playlist, insertPos, selectedResult.playlist_items[i])
+                                end
+                                state.logger.info("RadioHost", "Added playlist to play next: " .. #selectedResult.playlist_items .. " songs")
+                            else
+                                -- No song playing, add and start playing first song
+                                for i = 1, #selectedResult.playlist_items do
+                                    table.insert(state.playlist, selectedResult.playlist_items[i])
+                                end
+                                state.current_song_index = 1
+                                state.now_playing = selectedResult.playlist_items[1]
+                                state.playing = true
+                                state.needs_next_chunk = 1
+                                state.decoder = require("cc.audio.dfpwm").make_decoder()
+                                state.logger.info("RadioHost", "Added playlist and started playing: " .. selectedResult.playlist_items[1].name)
+                                
+                                -- Broadcast song change to listeners
+                                if state.is_broadcasting then
+                                    radioHost.broadcastSongChange(state)
+                                end
+                                os.queueEvent("audio_update")
                             end
-                            os.queueEvent("audio_update")
+                        else
+                            -- Add individual song
+                            if state.now_playing then
+                                -- Insert after current song
+                                local insertPos = state.current_song_index + 1
+                                table.insert(state.playlist, insertPos, selectedResult)
+                                state.logger.info("RadioHost", "Added song to play next: " .. selectedResult.name)
+                            else
+                                -- No song playing, add and start playing
+                                table.insert(state.playlist, selectedResult)
+                                state.current_song_index = #state.playlist
+                                state.now_playing = selectedResult
+                                state.playing = true
+                                state.needs_next_chunk = 1
+                                state.decoder = require("cc.audio.dfpwm").make_decoder()
+                                state.logger.info("RadioHost", "Added and started playing: " .. selectedResult.name)
+                                
+                                -- Broadcast song change to listeners
+                                if state.is_broadcasting then
+                                    radioHost.broadcastSongChange(state)
+                                end
+                                os.queueEvent("audio_update")
+                            end
                         end
                         
                         -- Broadcast playlist update to listeners
