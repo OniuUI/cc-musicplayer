@@ -569,13 +569,20 @@ function radioHost.startBroadcast(state)
         state.decoder = require("cc.audio.dfpwm").make_decoder()
     end
     
-    -- Open modem for broadcasting
+    -- Open modem channels for broadcasting and receiving join requests
     radioProtocol.openBroadcastChannel()
+    
+    -- Open station channel to receive join requests
+    local stationId = os.getComputerID()
+    local stationChannel = radioProtocol.getStationChannel(stationId)
+    radioProtocol.openChannel(stationChannel)
+    
+    state.logger.info("RadioHost", "Opened broadcast channel and station channel " .. stationChannel .. " for station ID " .. stationId)
     
     -- Announce station
     radioHost.announceStation(state)
     
-    state.logger.info("RadioHost", "Started broadcasting: " .. state.station_name)
+    state.logger.info("RadioHost", "Started broadcasting: " .. state.station_name .. " on channel " .. stationChannel)
 end
 
 function radioHost.stopBroadcast(state)
@@ -1527,27 +1534,108 @@ end
 -- AUDIO LOOP (like YouTube player)
 function radioHost.audioLoop(state, speakers)
     while true do
-        if state.playing and state.now_playing and state.player_handle then
-            -- Handle audio streaming (same as YouTube player)
-            local chunk = state.player_handle.read(16 * 1024)
-            if chunk then
-                local buffer = state.decoder(chunk)
-                while not state.speakerManager.playAudio(speakers, buffer) do
-                    os.pullEvent("speaker_audio_empty")
-                end
+        -- AUDIO STREAMING (like YouTube player)
+        if state.playing and state.now_playing then
+            local thisnowplayingid = state.now_playing.id
+            if state.playing_id ~= thisnowplayingid then
+                state.playing_id = thisnowplayingid
+                state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
+                state.playing_status = 0
+                state.needs_next_chunk = 1
+
+                http.request({url = state.last_download_url, binary = true})
+                state.is_loading = true
+                state.logger.info("RadioHost", "Requesting audio stream for: " .. state.now_playing.name)
+
+                os.queueEvent("redraw_screen")
+                os.queueEvent("audio_update")
+            elseif state.playing_status == 1 and state.needs_next_chunk == 1 then
+
+                while true do
+                    local chunk = state.player_handle.read(state.size)
+                    if not chunk then
+                        -- Song finished, move to next
+                        state.logger.info("RadioHost", "Song finished, moving to next")
+                        radioHost.nextSong(state, speakers)
+                        
+                        if state.player_handle then
+                            state.player_handle.close()
+                        end
+                        state.needs_next_chunk = 0
+                        break
+                    else
+                        if state.start then
+                            chunk, state.start = state.start .. chunk, nil
+                            state.size = state.size + 4
+                        end
                 
-                -- Broadcast audio chunk to listeners
-                if state.is_broadcasting then
-                    radioHost.broadcastAudioChunk(state, buffer)
+                        state.buffer = state.decoder(chunk)
+                        
+                        -- Play audio on local speakers
+                        local fn = {}
+                        for i, speaker in ipairs(speakers) do 
+                            fn[i] = function()
+                                local name = peripheral.getName(speaker)
+                                if #speakers > 1 then
+                                    if speaker.playAudio(state.buffer, state.volume) then
+                                        parallel.waitForAny(
+                                            function()
+                                                repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                            end,
+                                            function()
+                                                local event = os.pullEvent("playback_stopped")
+                                                return
+                                            end
+                                        )
+                                        if not state.playing or state.playing_id ~= thisnowplayingid then
+                                            return
+                                        end
+                                    end
+                                else
+                                    while not speaker.playAudio(state.buffer, state.volume) do
+                                        parallel.waitForAny(
+                                            function()
+                                                repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                            end,
+                                            function()
+                                                local event = os.pullEvent("playback_stopped")
+                                                return
+                                            end
+                                        )
+                                        if not state.playing or state.playing_id ~= thisnowplayingid then
+                                            return
+                                        end
+                                    end
+                                end
+                                if not state.playing or state.playing_id ~= thisnowplayingid then
+                                    return
+                                end
+                            end
+                        end
+                        
+                        local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
+                        if not ok then
+                            state.needs_next_chunk = 2
+                            state.is_error = true
+                            break
+                        end
+                        
+                        -- Broadcast audio chunk to listeners
+                        if state.is_broadcasting then
+                            radioHost.broadcastAudioChunk(state, state.buffer)
+                        end
+                        
+                        -- If we're not playing anymore, exit the chunk processing loop
+                        if not state.playing or state.playing_id ~= thisnowplayingid then
+                            break
+                        end
+                    end
                 end
-            else
-                -- Song finished
-                state.logger.info("RadioHost", "Song finished, moving to next")
-                radioHost.nextSong(state, speakers)
+                os.queueEvent("audio_update")
             end
-        else
-            sleep(0.1)
         end
+
+        os.pullEvent("audio_update")
     end
 end
 
@@ -1586,7 +1674,7 @@ function radioHost.httpLoop(state)
                     state.start = handle.read(4)
                     state.size = 16 * 1024 - 4
                     state.playing_status = 1
-                    state.logger.info("RadioHost", "Audio stream ready")
+                    state.logger.info("RadioHost", "Audio stream ready for: " .. (state.now_playing and state.now_playing.name or "Unknown"))
                     os.queueEvent("redraw_screen")
                     os.queueEvent("audio_update")
                 end
@@ -1630,6 +1718,15 @@ function radioHost.networkLoop(state)
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
         if message and type(message) == "table" then
+            state.logger.info("RadioHost", "Received message on channel " .. channel .. " from " .. (distance and ("distance " .. distance) or "unknown"))
+            
+            if radioProtocol.isValidMessage(message) then
+                local data = radioProtocol.extractMessageData(message)
+                if data then
+                    state.logger.info("RadioHost", "Message type: " .. (data.type or "unknown"))
+                end
+            end
+            
             radioHost.handleNetworkMessage(state, message, replyChannel)
         end
         

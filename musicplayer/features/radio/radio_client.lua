@@ -636,6 +636,8 @@ function radioClient.connectToStation(state, station, speakers)
     local stationChannel = radioProtocol.getStationChannel(station.station_id)
     local clientChannel = radioProtocol.getClientChannel(clientId)
     
+    state.logger.info("RadioClient", "Using station channel: " .. stationChannel .. ", client channel: " .. clientChannel)
+    
     -- Open channels
     radioProtocol.openChannel(stationChannel)
     radioProtocol.openChannel(clientChannel)
@@ -657,7 +659,7 @@ function radioClient.connectToStation(state, station, speakers)
     local modem = peripheral.find("modem")
     if modem then
         modem.transmit(stationChannel, clientChannel, protocolMessage)
-        state.logger.info("RadioClient", "Join request sent to station " .. station.station_id)
+        state.logger.info("RadioClient", "Join request sent to station " .. station.station_id .. " on channel " .. stationChannel)
     else
         state.connection_status = "error"
         state.connection_error = "No modem available"
