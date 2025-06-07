@@ -155,9 +155,7 @@ function youtubeUI.drawSearchResults(state)
         state.logger.info("YouTube", "Drawing " .. #state.search_results .. " search results")
     end
     
-    -- Draw search results with theme colors but original working layout (2 lines per result)
-    term.setBackgroundColor(theme.colors.background)
-    
+    -- Draw search results with EXACT original colors and layout
     for i = 1, #state.search_results do
         local result = state.search_results[i]
         local y1 = 7 + (i-1)*2  -- First line (title)
@@ -176,14 +174,16 @@ function youtubeUI.drawSearchResults(state)
             break
         end
         
-        -- Song title with theme accent color
-        term.setTextColor(theme.colors.text_primary)
+        -- Song title with ORIGINAL colors (white on black)
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.white)
         term.setCursorPos(2, y1)
         term.clearLine()
         term.write(result.name)
         
-        -- Artist with theme secondary color
-        term.setTextColor(theme.colors.text_secondary)
+        -- Artist with ORIGINAL colors (light gray on black)
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.lightGray)
         term.setCursorPos(2, y2)
         term.clearLine()
         term.write(result.artist)
@@ -195,36 +195,62 @@ function youtubeUI.drawSongActionMenu(state)
     
     -- Debug logging
     if state.logger then
-        state.logger.info("YouTube", "Drawing song action menu for result " .. (state.clicked_result or "nil"))
+        state.logger.info("YouTube", "=== DRAWING SONG ACTION MENU ===")
+        state.logger.info("YouTube", "clicked_result=" .. (state.clicked_result or "nil"))
+        state.logger.info("YouTube", "search_results count=" .. (state.search_results and #state.search_results or "nil"))
     end
     
-    -- Clear screen and redraw with theme background
-    components.clearScreen()
+    -- Clear screen completely (like original)
+    term.setBackgroundColor(colors.black)
+    term.clear()
     
-    -- Redraw header and footer for action menu
-    components.drawHeader(state)
-    components.drawFooter(state)
+    -- Draw basic header (simplified)
+    term.setBackgroundColor(colors.gray)
+    term.setCursorPos(1, 1)
+    term.clearLine()
+    term.setTextColor(colors.white)
+    term.setCursorPos(2, 1)
+    term.write("YouTube Player - Song Options")
     
-    -- Selected song info with theme colors
+    -- Selected song info with ORIGINAL colors (like original working code)
     if state.search_results and state.clicked_result then
         local selectedSong = state.search_results[state.clicked_result]
-        term.setBackgroundColor(theme.colors.background)
-        term.setTextColor(theme.colors.text_accent)
+        if state.logger then
+            state.logger.info("YouTube", "Drawing song info: " .. selectedSong.name)
+        end
+        
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.white)
+        term.setCursorPos(2, 2)
+        term.write(selectedSong.name)
+        term.setTextColor(colors.lightGray)
         term.setCursorPos(2, 3)
-        term.write("♪ " .. selectedSong.name)
-        term.setTextColor(theme.colors.text_secondary)
-        term.setCursorPos(2, 4)
-        term.write("by " .. selectedSong.artist)
+        term.write(selectedSong.artist)
     end
 
-    -- Action buttons using our components with original coordinates
-    components.drawButton(2, 6, "Play now", false, true)
-    components.drawButton(2, 8, "Play next", false, true)
-    components.drawButton(2, 10, "Add to queue", false, true)
-    components.drawButton(2, 13, "Cancel", false, true)
+    -- Action buttons with ORIGINAL colors (like original working code)
+    term.setBackgroundColor(colors.gray)
+    term.setTextColor(colors.white)
     
-    -- Back to menu button (should still be available in action menu)
-    components.drawButton(2, state.height - 3, "Back to Menu", false, true)
+    term.setCursorPos(2, 6)
+    term.clearLine()
+    term.write("Play now")
+    
+    term.setCursorPos(2, 8)
+    term.clearLine()
+    term.write("Play next")
+    
+    term.setCursorPos(2, 10)
+    term.clearLine()
+    term.write("Add to queue")
+    
+    term.setCursorPos(2, 13)
+    term.clearLine()
+    term.write("Cancel")
+    
+    if state.logger then
+        state.logger.info("YouTube", "=== ACTION MENU DRAWING COMPLETE ===")
+    end
 end
 
 return youtubeUI 
