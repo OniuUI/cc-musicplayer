@@ -1,8 +1,8 @@
 -- YouTube Music Player UI Layout
 -- Using our proper theme system and components architecture with working functionality
 
-local components = require("musicplayer.ui.components")
-local themes = require("musicplayer.ui.themes")
+local components = require("musicplayer/ui/components")
+local themes = require("musicplayer/ui/themes")
 
 local youtubeUI = {}
 

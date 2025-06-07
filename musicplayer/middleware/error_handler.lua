@@ -1,7 +1,7 @@
 -- Error handling middleware for Bognesferga Radio
 -- Provides comprehensive error catching, logging, and recovery mechanisms
 
-local common = require("musicplayer.utils.common")
+local common = require("musicplayer/utils/common")
 
 local errorHandler = {}
 

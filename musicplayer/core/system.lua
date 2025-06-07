@@ -1,21 +1,21 @@
--- Core System module for Bognesferga Radio
--- Handles system initialization and coordination between all components
+-- Core System Module for Bognesferga Radio
+-- Initializes and coordinates all system components
 
-local config = require("musicplayer.config")
-local common = require("musicplayer.utils.common")
+local config = require("musicplayer/config")
+local common = require("musicplayer/utils/common")
 
--- Import middleware and utilities
-local errorHandler = require("musicplayer.middleware.error_handler")
+-- Core modules
+local errorHandler = require("musicplayer/middleware/error_handler")
 
--- Import telemetry system
-local telemetry = require("musicplayer.telemetry.telemetry")
+-- Telemetry and logging
+local telemetry = require("musicplayer/telemetry/telemetry")
 
--- Import managers
-local httpClient = require("musicplayer.network.http_client")
-local speakerManager = require("musicplayer.audio.speaker_manager")
+-- Network and audio
+local httpClient = require("musicplayer/network/http_client")
+local speakerManager = require("musicplayer/audio/speaker_manager")
 
--- Import UI components
-local components = require("musicplayer.ui.components")
+-- UI components
+local components = require("musicplayer/ui/components")
 
 local system = {}
 

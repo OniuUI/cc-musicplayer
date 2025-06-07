@@ -2,8 +2,8 @@
 -- A comprehensive music and radio system for ComputerCraft with advanced telemetry
 
 -- Import the new core system
-local system = require("musicplayer.core.system")
-local app_manager = require("musicplayer.app_manager")
+local system = require("musicplayer/core/system")
+local app_manager = require("musicplayer/app_manager")
 
 -- Main application entry point
 local function main()
@@ -51,7 +51,7 @@ local function safeMain()
         term.setTextColor(colors.white)
         
         -- Try to log the error if telemetry is available
-        local telemetrySuccess, telemetry = pcall(require, "musicplayer.telemetry.telemetry")
+        local telemetrySuccess, telemetry = pcall(require, "musicplayer/telemetry/telemetry")
         if telemetrySuccess and telemetry then
             local telemetryInstance = telemetry.init("ERROR")
             if telemetryInstance then

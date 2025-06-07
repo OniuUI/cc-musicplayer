@@ -1,8 +1,8 @@
 -- Main Telemetry module for Bognesferga Radio
 -- Coordinates system detection, logging, and dual-screen management
 
-local logger = require("musicplayer.telemetry.logger")
-local detector = require("musicplayer.telemetry.system_detector")
+local logger = require("musicplayer/telemetry/logger")
+local detector = require("musicplayer/telemetry/system_detector")
 
 local telemetry = {}
 

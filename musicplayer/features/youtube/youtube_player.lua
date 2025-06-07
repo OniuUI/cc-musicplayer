@@ -1,9 +1,9 @@
 -- YouTube Music Player Feature
 -- Enhanced with proper theme system and components while maintaining working functionality
 
-local youtubeUI = require("musicplayer.ui.layouts.youtube")
-local components = require("musicplayer.ui.components")
-local themes = require("musicplayer.ui.themes")
+local youtubeUI = require("musicplayer/ui/layouts/youtube")
+local components = require("musicplayer/ui/components")
+local themes = require("musicplayer/ui/themes")
 
 local youtubePlayer = {}
 
@@ -320,6 +320,8 @@ function youtubePlayer.handleInput(state, speakers)
                             os.queueEvent("redraw_screen")
                             break
                         end
+                        
+                        ::continue::
                     end
                 end
             end

@@ -1,10 +1,10 @@
 -- Application Manager for Bognesferga Radio
 -- Updated to use new modular architecture with feature-based organization
 
-local mainMenu = require("musicplayer.features.menu.main_menu")
-local youtubePlayer = require("musicplayer.features.youtube.youtube_player")
-local radioClient = require("musicplayer.features.radio.radio_client")
-local radioHost = require("musicplayer.features.radio.radio_host")
+local mainMenu = require("musicplayer/features/menu/main_menu")
+local youtubePlayer = require("musicplayer/features/youtube/youtube_player")
+local radioClient = require("musicplayer/features/radio/radio_client")
+local radioHost = require("musicplayer/features/radio/radio_host")
 
 local app_manager = {}
 

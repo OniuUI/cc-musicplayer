@@ -1,8 +1,8 @@
 -- UI Components for Bognesferga Radio
 -- Reusable UI elements and rendering functions
 
-local themes = require("musicplayer.ui.themes")
-local common = require("musicplayer.utils.common")
+local themes = require("musicplayer/ui/themes")
+local common = require("musicplayer/utils/common")
 
 local components = {}
 

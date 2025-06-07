@@ -1,8 +1,8 @@
 -- Main menu feature for Bognesferga Radio
 -- Consolidated menu system with improved UI components
 
-local components = require("musicplayer.ui.components")
-local themes = require("musicplayer.ui.themes")
+local components = require("musicplayer/ui/components")
+local themes = require("musicplayer/ui/themes")
 
 local mainMenu = {}
 

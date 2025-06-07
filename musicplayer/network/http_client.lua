@@ -1,8 +1,8 @@
 -- HTTP Client for Bognesferga Radio
 -- Handles all HTTP requests with proper error handling and retry logic
 
-local config = require("musicplayer.config")
-local common = require("musicplayer.utils.common")
+local config = require("musicplayer/config")
+local common = require("musicplayer/utils/common")
 
 local httpClient = {}
 

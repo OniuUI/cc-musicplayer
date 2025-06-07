@@ -1,8 +1,8 @@
 -- Speaker Manager for Bognesferga Radio
 -- Manages audio output across multiple speakers with error handling and synchronization
 
-local config = require("musicplayer.config")
-local common = require("musicplayer.utils.common")
+local config = require("musicplayer/config")
+local common = require("musicplayer/utils/common")
 
 local speakerManager = {}
 
