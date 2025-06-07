@@ -17,6 +17,11 @@ function youtubeUI.redrawScreen(state)
     term.setCursorBlink(false)
     state.width, state.height = term.getSize()
     
+    -- Debug logging
+    if state.logger then
+        state.logger.debug("YouTube", "Redrawing screen: tab=" .. state.tab .. " in_search_result=" .. tostring(state.in_search_result))
+    end
+    
     -- Clear screen with theme background
     components.clearScreen()
 
@@ -92,6 +97,12 @@ end
 function youtubeUI.drawSearch(state)
     local theme = themes.getCurrent()
     
+    -- Song action menu using our theme system (check this FIRST like original)
+    if state.in_search_result then
+        youtubeUI.drawSongActionMenu(state)
+        return -- Don't draw anything else when in action menu
+    end
+    
     -- Search input using our themed approach but with original working coordinates
     youtubeUI.drawSearchInput(state)
 
@@ -110,11 +121,6 @@ function youtubeUI.drawSearch(state)
             term.setCursorPos(2, 7)
             term.write("Tip: You can paste YouTube video or playlist links.")
         end
-    end
-
-    -- Song action menu using our theme system
-    if state.in_search_result then
-        youtubeUI.drawSongActionMenu(state)
     end
 end
 

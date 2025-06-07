@@ -214,7 +214,8 @@ function youtubePlayer.uiLoop(state, speakers)
                                             
                                             -- Redraw (like original)
                                             youtubeUI.redrawScreen(state)
-                                            break
+                                            state.logger.info("YouTube", "Redraw completed, should now show action menu")
+                                            return -- Exit this event handler to prevent further processing
                                         end
                                     end
                                 end
