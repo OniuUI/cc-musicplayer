@@ -22,6 +22,12 @@ function youtubeUI.redrawScreen(state)
         state.logger.debug("YouTube", "Redrawing screen: tab=" .. state.tab .. " in_search_result=" .. tostring(state.in_search_result))
     end
     
+    -- CRITICAL FIX: Check for action menu FIRST, before drawing any other UI components
+    if state.tab == 2 and state.in_search_result then
+        youtubeUI.drawSongActionMenu(state)
+        return -- Don't draw anything else when in action menu
+    end
+    
     -- Clear screen with theme background
     components.clearScreen()
 
@@ -96,12 +102,6 @@ end
 
 function youtubeUI.drawSearch(state)
     local theme = themes.getCurrent()
-    
-    -- Song action menu using our theme system (check this FIRST like original)
-    if state.in_search_result then
-        youtubeUI.drawSongActionMenu(state)
-        return -- Don't draw anything else when in action menu
-    end
     
     -- Search input using our themed approach but with original working coordinates
     youtubeUI.drawSearchInput(state)
