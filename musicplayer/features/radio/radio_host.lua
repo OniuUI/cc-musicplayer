@@ -777,6 +777,20 @@ function radioHost.handleJoinRequest(state, data, replyChannel)
     local listenerId = data.listener_id
     
     state.logger.info("RadioHost", "Processing join request from Computer-" .. listenerId .. " on reply channel " .. replyChannel)
+    state.logger.info("RadioHost", "Current broadcasting status: " .. tostring(state.is_broadcasting))
+    state.logger.info("RadioHost", "Current listeners: " .. #state.listeners .. "/" .. state.max_listeners)
+    
+    if not state.is_broadcasting then
+        -- Not broadcasting - reject the request
+        local response = {
+            type = "join_response",
+            success = false,
+            reason = "Station not broadcasting"
+        }
+        state.logger.info("RadioHost", "Rejecting join request - not broadcasting")
+        radioProtocol.sendToChannel(replyChannel, response)
+        return
+    end
     
     if #state.listeners >= state.max_listeners then
         -- Station full
@@ -826,8 +840,9 @@ function radioHost.handleJoinRequest(state, data, replyChannel)
         current_song_index = state.current_song_index
     }
     
-    state.logger.info("RadioHost", "Sending join response to Computer-" .. listenerId)
-    radioProtocol.sendToChannel(replyChannel, response)
+    state.logger.info("RadioHost", "Sending join response to Computer-" .. listenerId .. " on channel " .. replyChannel)
+    local success = radioProtocol.sendToChannel(replyChannel, response)
+    state.logger.info("RadioHost", "Join response sent successfully: " .. tostring(success))
     
     state.logger.info("RadioHost", "Listener joined: Computer-" .. listenerId .. " (" .. #state.listeners .. "/" .. state.max_listeners .. ")")
 end
@@ -1918,6 +1933,11 @@ function radioHost.networkLoop(state)
                 local data = radioProtocol.extractMessageData(message)
                 if data then
                     state.logger.info("RadioHost", "Valid message type: " .. (data.type or "unknown") .. " from client " .. (data.client_id or data.listener_id or "unknown"))
+                    
+                    -- Debug join requests specifically
+                    if data.type == "join_request" then
+                        state.logger.info("RadioHost", "JOIN REQUEST received from Computer-" .. (data.listener_id or "unknown") .. " - Broadcasting: " .. tostring(state.is_broadcasting))
+                    end
                     
                     -- Handle discovery requests even when not broadcasting (for debugging)
                     if data.type == "discovery_request" then

@@ -663,16 +663,44 @@ function radioClient.connectToStation(state, station)
     -- Open our client channel to receive response
     radioProtocol.openChannel(clientChannel)
     
-    -- Send join request to station
+    -- Send join request using the protocol's expected format
     local joinRequest = {
         type = "join_request",
         listener_id = os.getComputerID(),
         timestamp = os.epoch("utc")
     }
     
-    radioProtocol.sendToChannel(stationChannel, joinRequest)
+    -- Create protocol message manually to control reply channel
+    local protocolMessage = {
+        protocol_version = "1.0",
+        timestamp = os.epoch("utc"),
+        data = joinRequest
+    }
     
-    state.logger.info("RadioClient", "Join request sent to station " .. station.station_id .. " on channel " .. stationChannel)
+    -- Open station channel and send with proper reply channel
+    radioProtocol.openChannel(stationChannel)
+    
+    -- Get the raw modem to send with specific reply channel
+    local modem = nil
+    local sides = {"top", "bottom", "left", "right", "front", "back"}
+    for _, side in ipairs(sides) do
+        if peripheral.isPresent(side) and peripheral.getType(side) == "modem" then
+            local testModem = peripheral.wrap(side)
+            if testModem.isWireless() then
+                modem = testModem
+                break
+            end
+        end
+    end
+    
+    if modem then
+        modem.transmit(stationChannel, clientChannel, protocolMessage)
+        state.logger.info("RadioClient", "Join request sent to station " .. station.station_id .. " on channel " .. stationChannel .. " with reply channel " .. clientChannel)
+    else
+        state.connection_status = "error"
+        state.connection_error = "No modem available"
+        state.logger.error("RadioClient", "No wireless modem found")
+    end
 end
 
 function radioClient.disconnect(state)
@@ -854,7 +882,7 @@ function radioClient.networkLoop(state)
                 state.connection_status = "error"
                 state.connection_error = "Connection timeout"
                 state.connecting_to_station = nil
-                state.logger.error("RadioClient", "Connection timeout")
+                state.logger.error("RadioClient", "Connection timeout - no response from host")
                 os.queueEvent("redraw_screen")
             end
         end
@@ -889,11 +917,23 @@ function radioClient.networkLoop(state)
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
         if message and type(message) == "table" then
+            state.logger.info("RadioClient", "Received message on channel " .. channel .. " (reply: " .. replyChannel .. ") from distance " .. (distance or "unknown"))
+            
             if radioProtocol.isValidMessage(message) then
                 local data = radioProtocol.extractMessageData(message)
+                if data then
+                    state.logger.info("RadioClient", "Valid message type: " .. (data.type or "unknown") .. " from station " .. (data.station_id or "unknown"))
+                    
+                    -- Debug connection process
+                    if state.connection_status == "connecting" and state.connecting_to_station then
+                        state.logger.info("RadioClient", "Currently connecting to station " .. state.connecting_to_station.station_id .. ", received message from station " .. (data.station_id or "unknown"))
+                    end
+                end
                 
                 -- Handle station discovery responses
                 if state.scanning and data and data.type == "station_announcement" then
+                    state.logger.info("RadioClient", "Station announcement received from " .. (data.station_id or "unknown") .. ": " .. (data.station_name or "Unknown"))
+                    
                     -- Check if we already have this station
                     local found = false
                     for _, station in ipairs(state.stations) do
@@ -909,7 +949,7 @@ function radioClient.networkLoop(state)
                             break
                         end
                     end
-                    
+
                     if not found then
                         -- Add new station
                         table.insert(state.stations, {
@@ -927,13 +967,17 @@ function radioClient.networkLoop(state)
                         os.queueEvent("redraw_screen")
                     end
                 end
-                
+    
                 -- Handle connection responses
                 if state.connection_status == "connecting" and state.connecting_to_station then
                     local clientId = os.getComputerID()
                     local clientChannel = radioProtocol.getClientChannel(clientId)
                     
+                    state.logger.info("RadioClient", "Checking for join response - our channel: " .. clientChannel .. ", message channel: " .. channel)
+                    
                     if channel == clientChannel and data and data.type == "join_response" then
+                        state.logger.info("RadioClient", "Join response received! Success: " .. tostring(data.success))
+                        
                         if data.success then
                             state.connection_status = "connected"
                             state.connected = true
@@ -971,7 +1015,7 @@ function radioClient.networkLoop(state)
                         os.queueEvent("redraw_screen")
                     end
                 end
-                
+    
                 -- Handle messages from connected station
                 if data and data.station_id == state.connected_station_id then
                     -- Reset warnings on any valid message from our host
@@ -982,6 +1026,8 @@ function radioClient.networkLoop(state)
                     
                     radioClient.handleNetworkMessage(state, data, replyChannel)
                 end
+            else
+                state.logger.warn("RadioClient", "Invalid message received on channel " .. channel)
             end
         end
         
