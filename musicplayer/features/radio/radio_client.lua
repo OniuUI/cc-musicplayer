@@ -826,6 +826,18 @@ function radioClient.audioLoop(state, speakers)
 end
 
 function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
+    -- Calculate how much audio data to skip for synchronization
+    local bytes_to_skip = 0
+    if state.client_start_offset and state.client_start_offset > 0 then
+        -- DFPWM is typically 48000 Hz, 1 byte per sample
+        -- So we need to skip approximately: offset_seconds * 48000 bytes
+        bytes_to_skip = math.floor(state.client_start_offset * 48000)
+        state.logger.info("RadioClient", "Skipping " .. bytes_to_skip .. " bytes for " .. string.format("%.2f", state.client_start_offset) .. "s sync offset")
+    end
+    
+    local bytes_skipped = 0
+    local sync_complete = (bytes_to_skip == 0)
+    
     while true do
         local chunk = state.player_handle.read(state.size)
         if not chunk then
@@ -849,66 +861,89 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                 state.size = state.size + 4
             end
     
-            state.buffer = state.decoder(chunk)
+            -- Skip audio data for synchronization
+            if not sync_complete then
+                local chunk_size = #chunk
+                if bytes_skipped + chunk_size <= bytes_to_skip then
+                    -- Skip entire chunk
+                    bytes_skipped = bytes_skipped + chunk_size
+                    state.logger.debug("RadioClient", "Skipped chunk: " .. bytes_skipped .. "/" .. bytes_to_skip .. " bytes")
+                    goto continue_skip
+                else
+                    -- Skip partial chunk and start playing
+                    local skip_in_chunk = bytes_to_skip - bytes_skipped
+                    chunk = chunk:sub(skip_in_chunk + 1)
+                    bytes_skipped = bytes_to_skip
+                    sync_complete = true
+                    state.logger.info("RadioClient", "Sync complete - started playing at " .. string.format("%.2f", state.client_start_offset) .. "s offset")
+                end
+            end
             
-            -- Play audio locally (only if not muted)
-            if not state.muted then
-                local fn = {}
-                for i, speaker in ipairs(speakers) do 
-                    fn[i] = function()
-                        local name = peripheral.getName(speaker)
-                        local playVolume = state.volume
-                        
-                        if #speakers > 1 then
-                            if speaker.playAudio(state.buffer, playVolume) then
-                                parallel.waitForAny(
-                                    function()
-                                        repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
-                                    end,
-                                    function()
-                                        local event = os.pullEvent("playback_stopped")
+            -- Only process audio if we have data after skipping
+            if #chunk > 0 then
+                state.buffer = state.decoder(chunk)
+                
+                -- Play audio locally (only if not muted)
+                if not state.muted then
+                    local fn = {}
+                    for i, speaker in ipairs(speakers) do 
+                        fn[i] = function()
+                            local name = peripheral.getName(speaker)
+                            local playVolume = state.volume
+                            
+                            if #speakers > 1 then
+                                if speaker.playAudio(state.buffer, playVolume) then
+                                    parallel.waitForAny(
+                                        function()
+                                            repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                        end,
+                                        function()
+                                            local event = os.pullEvent("playback_stopped")
+                                            return
+                                        end
+                                    )
+                                    if not state.playing or state.playing_id ~= thisnowplayingid then
                                         return
                                     end
-                                )
-                                if not state.playing or state.playing_id ~= thisnowplayingid then
-                                    return
                                 end
-                            end
-                        else
-                            while not speaker.playAudio(state.buffer, playVolume) do
-                                parallel.waitForAny(
-                                    function()
-                                        repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
-                                    end,
-                                    function()
-                                        local event = os.pullEvent("playback_stopped")
+                            else
+                                while not speaker.playAudio(state.buffer, playVolume) do
+                                    parallel.waitForAny(
+                                        function()
+                                            repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
+                                        end,
+                                        function()
+                                            local event = os.pullEvent("playback_stopped")
+                                            return
+                                        end
+                                    )
+                                    if not state.playing or state.playing_id ~= thisnowplayingid then
                                         return
                                     end
-                                )
-                                if not state.playing or state.playing_id ~= thisnowplayingid then
-                                    return
                                 end
                             end
-                        end
-                        if not state.playing or state.playing_id ~= thisnowplayingid then
-                            return
+                            if not state.playing or state.playing_id ~= thisnowplayingid then
+                                return
+                            end
                         end
                     end
+                    
+                    local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
+                    if not ok then
+                        state.needs_next_chunk = 2
+                        state.is_error = true
+                        break
+                    end
+                    
+                    state.is_playing_audio = true
+                else
+                    -- Still process audio timing even when muted
+                    sleep(0.05)
+                    state.is_playing_audio = true
                 end
-                
-                local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
-                if not ok then
-                    state.needs_next_chunk = 2
-                    state.is_error = true
-                    break
-                end
-                
-                state.is_playing_audio = true
-            else
-                -- Still process audio timing even when muted
-                sleep(0.05)
-                state.is_playing_audio = true
             end
+            
+            ::continue_skip::
             
             -- Exit if playback stopped
             if not state.playing or state.playing_id ~= thisnowplayingid then
@@ -916,6 +951,9 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
             end
         end
     end
+    
+    -- Reset offset after use
+    state.client_start_offset = 0
     os.queueEvent("audio_update")
 end
 
@@ -1121,22 +1159,10 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         state.playing = data.playing or false
         state.is_playing_audio = false
         
-        -- Start streaming the new song from API (since we're connected to radio)
+        -- Start streaming the new song with sync (song changes should start from beginning)
         if state.playing and state.now_playing then
-            state.needs_next_chunk = 1
-            state.decoder = require("cc.audio.dfpwm").make_decoder()
-            state.playing_id = nil -- Force new download
-            
-            -- Start local audio streaming for the song the host is playing
-            state.playing_id = state.now_playing.id
-            state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
-            state.playing_status = 0
-            
-            http.request({url = state.last_download_url, binary = true})
-            state.is_loading = true
-            state.logger.info("RadioClient", "Requesting audio stream for host song: " .. state.now_playing.name)
-            
-            os.queueEvent("audio_update")
+            state.logger.info("RadioClient", "Starting new song from host: " .. state.now_playing.name)
+            radioClient.startSyncedAudio(state, 0) -- New songs start from beginning
         end
         
         os.queueEvent("redraw_screen")
@@ -1157,9 +1183,9 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
             end
             state.is_playing_audio = false
         elseif state.playing and state.now_playing and not state.is_playing_audio then
-            -- Start playing when host resumes
-            state.needs_next_chunk = 1
-            os.queueEvent("audio_update")
+            -- Start playing when host resumes - but we need sync info for proper timing
+            -- This will be handled by the next sync_status message with proper timing
+            state.logger.info("RadioClient", "Host resumed - waiting for sync timing")
         end
         
         os.queueEvent("redraw_screen")
@@ -1186,7 +1212,7 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         end
 
     elseif data.type == "sync_status" then
-        -- Use the new gentle sync system
+        -- Use the new synchronized system
         radioClient.handleSyncStatus(state, data)
         os.queueEvent("redraw_screen")
         
@@ -1247,6 +1273,10 @@ function radioClient.handleSyncStatus(state, data)
     
     -- Update host timing information
     state.host_playback_start_time = data.playback_start_time or 0
+    local host_server_time = data.server_time or currentTime
+    
+    -- Calculate time offset between host and client
+    local time_offset = currentTime - host_server_time
     
     -- Check if this is a new playback session
     if data.playback_session and data.playback_session ~= state.current_playback_session then
@@ -1268,23 +1298,21 @@ function radioClient.handleSyncStatus(state, data)
         state.current_playback_session = data.playback_session
         state.is_playing_audio = false
         
-        -- Reset audio state for new session
+        -- Reset audio state for new session with SYNC
         if data.playing and data.now_playing then
             state.now_playing = data.now_playing
             state.playing = true
             state.needs_next_chunk = 1
             state.decoder = require("cc.audio.dfpwm").make_decoder()
             
-            -- Start streaming the song from API
-            state.playing_id = state.now_playing.id
-            state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
-            state.playing_status = 0
+            -- Calculate how far into the song we should be
+            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            state.client_start_offset = math.max(0, song_elapsed_time)
             
-            http.request({url = state.last_download_url, binary = true})
-            state.is_loading = true
-            state.logger.info("RadioClient", "Starting new session: " .. data.now_playing.name)
+            state.logger.info("RadioClient", "Starting new session: " .. data.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
             
-            os.queueEvent("audio_update")
+            -- Start streaming the song from API with calculated offset
+            radioClient.startSyncedAudio(state, state.client_start_offset)
         end
     end
     
@@ -1301,38 +1329,31 @@ function radioClient.handleSyncStatus(state, data)
                 state.player_handle = nil
             end
             
-            -- Start streaming the new song
-            state.playing_id = state.now_playing.id
-            state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
-            state.playing_status = 0
-            state.needs_next_chunk = 1
+            -- Calculate sync offset for new song
+            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            state.client_start_offset = math.max(0, song_elapsed_time)
             
-            http.request({url = state.last_download_url, binary = true})
-            state.is_loading = true
-            state.logger.info("RadioClient", "Requesting new song: " .. state.now_playing.name)
+            state.logger.info("RadioClient", "Song change sync: " .. state.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
             
-            os.queueEvent("audio_update")
+            -- Start streaming the new song with sync
+            radioClient.startSyncedAudio(state, state.client_start_offset)
         end
     elseif data.now_playing and not state.now_playing then
-        -- First time receiving song info - start playing
+        -- First time receiving song info - start playing with sync
         state.logger.info("RadioClient", "Received initial song info: " .. data.now_playing.name)
         state.now_playing = data.now_playing
         state.current_song_index = data.current_song_index or 1
         state.playing = data.playing or false
         
         if state.playing then
-            -- Start streaming the song
-            state.playing_id = state.now_playing.id
-            state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
-            state.playing_status = 0
-            state.needs_next_chunk = 1
-            state.decoder = require("cc.audio.dfpwm").make_decoder()
+            -- Calculate how far into the song we should be
+            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            state.client_start_offset = math.max(0, song_elapsed_time)
             
-            http.request({url = state.last_download_url, binary = true})
-            state.is_loading = true
-            state.logger.info("RadioClient", "Starting initial song: " .. state.now_playing.name)
+            state.logger.info("RadioClient", "Initial sync: " .. state.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
             
-            os.queueEvent("audio_update")
+            -- Start streaming the song with sync
+            radioClient.startSyncedAudio(state, state.client_start_offset)
         end
     end
     
@@ -1349,9 +1370,13 @@ function radioClient.handleSyncStatus(state, data)
             end
             state.is_playing_audio = false
         elseif state.playing and state.now_playing and not state.is_playing_audio then
-            -- Resume - start audio if we have a song
-            state.needs_next_chunk = 1
-            os.queueEvent("audio_update")
+            -- Resume - start audio with current sync offset
+            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            state.client_start_offset = math.max(0, song_elapsed_time)
+            
+            state.logger.info("RadioClient", "Resume sync: " .. state.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
+            
+            radioClient.startSyncedAudio(state, state.client_start_offset)
         end
     end
     
@@ -1364,7 +1389,36 @@ function radioClient.handleSyncStatus(state, data)
     -- Reset sync warnings since we got a good sync
     state.sync_warnings = 0
     
-    state.logger.info("RadioClient", "Gentle sync completed - Session: " .. (state.current_playback_session or "none"))
+    state.logger.info("RadioClient", "Sync completed - Session: " .. (state.current_playback_session or "none") .. ", Offset: " .. string.format("%.2f", state.client_start_offset or 0) .. "s")
+end
+
+-- NEW: Start audio with proper synchronization offset
+function radioClient.startSyncedAudio(state, offset_seconds)
+    if not state.now_playing then
+        return
+    end
+    
+    state.playing_id = state.now_playing.id
+    
+    -- Store the offset for client-side synchronization
+    state.client_start_offset = offset_seconds or 0
+    
+    -- Use regular API URL (no seek parameter since API likely doesn't support it)
+    state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
+    state.playing_status = 0
+    state.needs_next_chunk = 1
+    state.decoder = require("cc.audio.dfpwm").make_decoder()
+    
+    http.request({url = state.last_download_url, binary = true})
+    state.is_loading = true
+    
+    if state.client_start_offset > 0 then
+        state.logger.info("RadioClient", "Requesting synced audio: " .. state.now_playing.name .. " with " .. string.format("%.2f", state.client_start_offset) .. "s client-side offset")
+    else
+        state.logger.info("RadioClient", "Requesting audio: " .. state.now_playing.name)
+    end
+    
+    os.queueEvent("audio_update")
 end
 
 function radioClient.playAudioChunk(state, audioData)
