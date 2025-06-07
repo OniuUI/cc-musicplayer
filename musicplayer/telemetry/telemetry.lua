@@ -91,8 +91,12 @@ end
 
 -- Switch back to terminal
 function telemetry.switchToTerminal()
-    term.restore()
-    logger.debug("Telemetry", "Switched back to terminal")
+    local success, error = pcall(term.restore)
+    if success then
+        logger.debug("Telemetry", "Switched back to terminal")
+    else
+        logger.debug("Telemetry", "No saved terminal state to restore: " .. tostring(error))
+    end
 end
 
 -- Save system report to file
@@ -262,7 +266,11 @@ function telemetry.emergency(module, message)
     
     -- Display on terminal regardless of current display
     local currentTerm = term.current()
-    term.restore()
+    local success, error = pcall(term.restore)
+    if not success then
+        -- If restore fails, just continue with current terminal
+        logger.debug("Telemetry", "Could not restore terminal for emergency message: " .. tostring(error))
+    end
     term.setTextColor(colors.red)
     print("[EMERGENCY] " .. module .. ": " .. message)
     term.setTextColor(colors.white)

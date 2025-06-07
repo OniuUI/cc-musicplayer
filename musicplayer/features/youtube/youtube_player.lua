@@ -199,7 +199,7 @@ function youtubePlayer.handleInputWithTimeout(state, speakers, timeout)
                 local currentMonitorSide = state.system.telemetry.getCurrentMonitorSide()
                 if currentMonitorSide and monitorSide ~= currentMonitorSide then
                     state.logger.debug("YouTube", "Ignoring touch from different monitor during input: " .. monitorSide)
-                    break -- Continue waiting for input
+                    return nil -- Continue waiting for input
                 end
             end
         end

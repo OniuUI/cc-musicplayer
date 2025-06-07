@@ -139,7 +139,14 @@ end
 function app_manager.runYouTube(appState)
     -- Initialize YouTube state if not already done
     if not appState.youtubeState then
-        appState.youtubeState = youtubePlayer.init(appState.system)
+        local systemModules = {
+            system = appState.system,
+            httpClient = appState.httpClient,
+            speakerManager = appState.speakerManager,
+            errorHandler = appState.errorHandler,
+            logger = appState.logger
+        }
+        appState.youtubeState = youtubePlayer.init(systemModules)
         appState.logger.info("AppManager", "YouTube player initialized")
     end
     
