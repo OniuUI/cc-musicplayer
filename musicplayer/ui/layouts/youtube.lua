@@ -22,14 +22,63 @@ function youtubeUI.redrawScreen(state)
         state.logger.debug("YouTube", "Redrawing screen: tab=" .. state.tab .. " in_search_result=" .. tostring(state.in_search_result))
     end
     
-    -- Clear screen with theme background
+    -- CRITICAL FIX: Check for action menu FIRST before drawing anything else
+    if state.in_search_result == true then
+        -- Draw ONLY the action menu (inline like original working code)
+        term.setBackgroundColor(colors.black)
+        term.clear()
+        
+        if state.logger then
+            state.logger.info("YouTube", "Drawing ONLY action menu for result " .. (state.clicked_result or "nil"))
+        end
+        
+        -- Song info (original coordinates)
+        if state.search_results and state.clicked_result then
+            local selectedSong = state.search_results[state.clicked_result]
+            term.setBackgroundColor(colors.black)
+            term.setTextColor(colors.white)
+            term.setCursorPos(2, 2)
+            term.write(selectedSong.name)
+            term.setTextColor(colors.lightGray)
+            term.setCursorPos(2, 3)
+            term.write(selectedSong.artist)
+        end
+
+        -- Action buttons (EXACT original coordinates: y=6,8,10,13)
+        term.setBackgroundColor(colors.gray)
+        term.setTextColor(colors.white)
+
+        term.setCursorPos(2, 6)
+        term.clearLine()
+        term.write("Play now")
+
+        term.setCursorPos(2, 8)
+        term.clearLine()
+        term.write("Play next")
+
+        term.setCursorPos(2, 10)
+        term.clearLine()
+        term.write("Add to queue")
+
+        term.setCursorPos(2, 13)
+        term.clearLine()
+        term.write("Cancel")
+        
+        if state.logger then
+            state.logger.info("YouTube", "Action menu drawn successfully - NOT drawing header/footer")
+        end
+        
+        return -- CRITICAL: Don't draw anything else when showing action menu
+    end
+    
+    -- Clear screen with theme background (only when NOT showing action menu)
     components.clearScreen()
 
-    -- Draw header and footer using components
+    -- Draw header and footer using components (only when NOT showing action menu)
     components.drawHeader(state)
     components.drawFooter(state)
 
-    -- Draw the tabs using components
+    -- Draw the tabs using components (only when NOT showing action menu)
     components.drawTabs(state, TABS)
 
     if state.tab == 1 then
@@ -100,56 +149,6 @@ function youtubeUI.drawSearch(state)
     -- Search input using our themed approach but with original working coordinates
     youtubeUI.drawSearchInput(state)
 
-    -- CRITICAL FIX: Restore original inline action menu logic
-    if state.in_search_result == true then
-        -- EXACT original action menu (like original working code)
-        term.setBackgroundColor(colors.black)
-        term.clear()
-        
-        -- Debug logging
-        if state.logger then
-            state.logger.info("YouTube", "Drawing inline action menu for result " .. (state.clicked_result or "nil"))
-        end
-        
-        -- Song info (original coordinates)
-        if state.search_results and state.clicked_result then
-            local selectedSong = state.search_results[state.clicked_result]
-            term.setBackgroundColor(colors.black)
-            term.setTextColor(colors.white)
-            term.setCursorPos(2, 2)
-            term.write(selectedSong.name)
-            term.setTextColor(colors.lightGray)
-            term.setCursorPos(2, 3)
-            term.write(selectedSong.artist)
-        end
-
-        -- Action buttons (EXACT original coordinates: y=6,8,10,13)
-        term.setBackgroundColor(colors.gray)
-        term.setTextColor(colors.white)
-
-        term.setCursorPos(2, 6)
-        term.clearLine()
-        term.write("Play now")
-
-        term.setCursorPos(2, 8)
-        term.clearLine()
-        term.write("Play next")
-
-        term.setCursorPos(2, 10)
-        term.clearLine()
-        term.write("Add to queue")
-
-        term.setCursorPos(2, 13)
-        term.clearLine()
-        term.write("Cancel")
-        
-        if state.logger then
-            state.logger.info("YouTube", "Inline action menu drawn successfully")
-        end
-        
-        return -- Don't draw search results when in action menu
-    end
-
     -- Search results using our components but with original working layout
     if state.search_results then
         youtubeUI.drawSearchResults(state)
@@ -166,6 +165,9 @@ function youtubeUI.drawSearch(state)
             term.write("Tip: You can paste YouTube video or playlist links.")
         end
     end
+    
+    -- Back to menu button using components (adjusted for footer)
+    components.drawButton(2, state.height - 3, "Back to Menu", false, true)
 end
 
 function youtubeUI.drawSearchInput(state)
