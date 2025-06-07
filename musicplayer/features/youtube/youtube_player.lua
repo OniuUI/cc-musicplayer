@@ -76,7 +76,7 @@ function youtubePlayer.run(state)
     return "menu"
 end
 
--- SIMPLIFIED REDRAW (direct drawing with modern look)
+-- SIMPLIFIED REDRAW (direct drawing with main menu design)
 function youtubePlayer.redrawScreen(state)
     if state.waiting_for_input then
         return
@@ -87,69 +87,98 @@ function youtubePlayer.redrawScreen(state)
     
     -- CRITICAL: Check for action menu FIRST
     if state.in_search_result == true then
-        -- Draw ONLY action menu (like reference)
+        -- Draw action menu with beautiful main menu design
         term.setBackgroundColor(colors.black)
         term.clear()
         
+        -- Beautiful header for action menu
+        term.setBackgroundColor(colors.blue)
+        term.setCursorPos(1, 1)
+        term.clearLine()
+        local title = "Bognesferga Radio"
+        local fullHeader = "♪ " .. title .. " ♪"
+        local headerX = math.floor((state.width - #fullHeader) / 2) + 1
+        term.setCursorPos(headerX, 1)
+        term.setTextColor(colors.yellow)
+        term.write("♪ ")
+        term.setTextColor(colors.white)
+        term.write(title)
+        term.setTextColor(colors.yellow)
+        term.write(" ♪")
+        
+        -- Song info with yellow accent
         if state.search_results and state.clicked_result then
             local selectedSong = state.search_results[state.clicked_result]
             term.setBackgroundColor(colors.black)
-            term.setTextColor(colors.white)
-            term.setCursorPos(2, 2)
-            term.write(selectedSong.name)
-            term.setTextColor(colors.lightGray)
+            term.setTextColor(colors.yellow)
             term.setCursorPos(2, 3)
-            term.write(selectedSong.artist)
+            term.write("Selected Song:")
+            term.setTextColor(colors.white)
+            term.setCursorPos(2, 4)
+            term.write("♪ " .. selectedSong.name)
+            term.setTextColor(colors.lightGray)
+            term.setCursorPos(2, 5)
+            term.write("  " .. selectedSong.artist)
         end
 
-        -- Action buttons (original coordinates)
-        term.setBackgroundColor(colors.gray)
+        -- Beautiful action buttons with contrasting colors
+        term.setCursorPos(2, 7)
+        term.setBackgroundColor(colors.lime)
+        term.setTextColor(colors.black)
+        term.write(" ▶ Play now ")
+
+        term.setCursorPos(2, 9)
+        term.setBackgroundColor(colors.cyan)
+        term.setTextColor(colors.black)
+        term.write(" ⏭ Play next ")
+
+        term.setCursorPos(2, 11)
+        term.setBackgroundColor(colors.lightBlue)
         term.setTextColor(colors.white)
-
-        term.setCursorPos(2, 6)
-        term.clearLine()
-        term.write("Play now")
-
-        term.setCursorPos(2, 8)
-        term.clearLine()
-        term.write("Play next")
-
-        term.setCursorPos(2, 10)
-        term.clearLine()
-        term.write("Add to queue")
+        term.write(" + Add to queue ")
 
         term.setCursorPos(2, 13)
+        term.setBackgroundColor(colors.red)
+        term.setTextColor(colors.white)
+        term.write(" ✗ Cancel ")
+        
+        -- Beautiful rainbow footer for action menu
+        term.setBackgroundColor(colors.gray)
+        term.setCursorPos(1, state.height)
         term.clearLine()
-        term.write("Cancel")
+        local devText = "Developed by Forty"
+        local footerX = math.floor((state.width - #devText) / 2) + 1
+        term.setCursorPos(footerX, state.height)
+        local rainbow_colors = {colors.red, colors.orange, colors.yellow, colors.lime, colors.cyan, colors.lightBlue, colors.purple, colors.magenta}
+        for i = 1, #devText do
+            local colorIndex = ((i - 1) % #rainbow_colors) + 1
+            term.setTextColor(rainbow_colors[colorIndex])
+            term.write(devText:sub(i, i))
+        end
         
         return -- Don't draw anything else
     end
     
-    -- Clear screen with modern colors
+    -- Clear screen
     term.setBackgroundColor(colors.black)
     term.clear()
 
-    -- Draw beautiful modern header (like before)
+    -- Beautiful main menu style header
     term.setBackgroundColor(colors.blue)
     term.setCursorPos(1, 1)
     term.clearLine()
+    local title = "Bognesferga Radio"
+    local fullHeader = "♪ " .. title .. " ♪"
+    local headerX = math.floor((state.width - #fullHeader) / 2) + 1
+    term.setCursorPos(headerX, 1)
+    term.setTextColor(colors.yellow)
+    term.write("♪ ")
     term.setTextColor(colors.white)
-    term.setCursorPos(2, 1)
-    term.write("Bognesferga Radio")
-    
-    -- Add rainbow title effect (like before)
-    local rainbow_colors = {colors.red, colors.orange, colors.yellow, colors.lime, colors.cyan, colors.lightBlue, colors.purple, colors.magenta}
-    local title = "YouTube Player"
-    local startX = state.width - #title - 1
-    for i = 1, #title do
-        local char = title:sub(i, i)
-        local colorIndex = ((i - 1) % #rainbow_colors) + 1
-        term.setTextColor(rainbow_colors[colorIndex])
-        term.setCursorPos(startX + i - 1, 1)
-        term.write(char)
-    end
+    term.write(title)
+    term.setTextColor(colors.yellow)
+    term.write(" ♪")
 
-    -- Draw beautiful modern tabs (like before)
+    -- Beautiful modern tabs with main menu styling
     local tabs = {" Now Playing ", " Search "}
     term.setCursorPos(1, 2)
     term.setBackgroundColor(colors.blue)
@@ -161,7 +190,7 @@ function youtubePlayer.redrawScreen(state)
             term.setBackgroundColor(colors.white)
         else
             term.setTextColor(colors.white)
-            term.setBackgroundColor(colors.blue)
+            term.setBackgroundColor(colors.lightGray)
         end
         
         local tabX = math.floor((state.width / #tabs) * (i - 0.5)) - math.ceil(#tabs[i] / 2) + 1
@@ -176,72 +205,82 @@ function youtubePlayer.redrawScreen(state)
         youtubePlayer.drawSearch(state)
     end
     
-    -- Draw beautiful modern footer (like before)
+    -- Beautiful rainbow footer (main menu style)
     term.setBackgroundColor(colors.gray)
-    term.setTextColor(colors.white)
-    term.setCursorPos(1, state.height - 2)
-    term.clearLine()
     term.setCursorPos(1, state.height - 1)
     term.clearLine()
     term.setCursorPos(1, state.height)
     term.clearLine()
     
-    -- Back to menu button (styled like before)
-    term.setBackgroundColor(colors.lightBlue)
-    term.setTextColor(colors.white)
+    -- Back to menu button with yellow accent
+    term.setBackgroundColor(colors.yellow)
+    term.setTextColor(colors.black)
     term.setCursorPos(2, state.height - 1)
-    term.write(" Back to Menu ")
+    term.write(" ← Back to Menu ")
     
-    -- Footer info (like before)
-    term.setBackgroundColor(colors.gray)
-    term.setTextColor(colors.lightGray)
-    term.setCursorPos(state.width - 15, state.height - 1)
-    term.write("Developed by Forty")
+    -- Rainbow "Developed by Forty" footer
+    local devText = "Developed by Forty"
+    local footerX = math.floor((state.width - #devText) / 2) + 1
+    term.setCursorPos(footerX, state.height)
+    local rainbow_colors = {colors.red, colors.orange, colors.yellow, colors.lime, colors.cyan, colors.lightBlue, colors.purple, colors.magenta}
+    for i = 1, #devText do
+        local colorIndex = ((i - 1) % #rainbow_colors) + 1
+        term.setTextColor(rainbow_colors[colorIndex])
+        term.write(devText:sub(i, i))
+    end
 end
 
 function youtubePlayer.drawNowPlaying(state)
-    -- Song info with beautiful modern styling
+    -- Welcome message with yellow accent (like main menu)
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.yellow)
+    term.setCursorPos(3, 4)
+    term.write("Now Playing:")
+    
+    -- Song info with beautiful styling
     if state.now_playing ~= nil then
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.white)
-        term.setCursorPos(2, 4)
+        term.setCursorPos(3, 5)
         term.write("♪ " .. state.now_playing.name)
         term.setTextColor(colors.lightGray)
-        term.setCursorPos(2, 5)
+        term.setCursorPos(3, 6)
         term.write("  " .. state.now_playing.artist)
     else
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.lightGray)
-        term.setCursorPos(2, 4)
-        term.write("♪ Not playing")
+        term.setCursorPos(3, 5)
+        term.write("♪ No song selected")
+        term.setCursorPos(3, 6)
+        term.write("  Choose a song from the Search tab")
     end
 
-    -- Status with beautiful modern colors
+    -- Status with beautiful colors and yellow accents
     if state.is_loading then
         term.setTextColor(colors.yellow)
         term.setBackgroundColor(colors.black)
-        term.setCursorPos(2, 7)
+        term.setCursorPos(3, 8)
         term.write("⟳ Loading...")
     elseif state.is_error then
         term.setTextColor(colors.red)
         term.setBackgroundColor(colors.black)
-        term.setCursorPos(2, 7)
+        term.setCursorPos(3, 8)
         term.write("✗ Network error")
     elseif state.playing then
         term.setTextColor(colors.lime)
         term.setBackgroundColor(colors.black)
-        term.setCursorPos(2, 7)
+        term.setCursorPos(3, 8)
         term.write("▶ Playing")
     end
 
-    -- Beautiful modern control buttons
-    local buttonY = 9
+    -- Beautiful control buttons with main menu style
+    local buttonY = 10
     
     -- Play/Stop button
     if state.playing then
         term.setBackgroundColor(colors.red)
         term.setTextColor(colors.white)
-        term.setCursorPos(2, buttonY)
+        term.setCursorPos(3, buttonY)
         term.write(" ⏹ Stop ")
     else
         if state.now_playing ~= nil or #state.queue > 0 then
@@ -251,30 +290,30 @@ function youtubePlayer.drawNowPlaying(state)
             term.setBackgroundColor(colors.gray)
             term.setTextColor(colors.lightGray)
         end
-        term.setCursorPos(2, buttonY)
+        term.setCursorPos(3, buttonY)
         term.write(" ▶ Play ")
     end
 
     -- Skip button
     if state.now_playing ~= nil or #state.queue > 0 then
-        term.setBackgroundColor(colors.lightBlue)
-        term.setTextColor(colors.white)
+        term.setBackgroundColor(colors.cyan)
+        term.setTextColor(colors.black)
     else
         term.setBackgroundColor(colors.gray)
         term.setTextColor(colors.lightGray)
     end
-    term.setCursorPos(12, buttonY)
+    term.setCursorPos(13, buttonY)
     term.write(" ⏭ Skip ")
 
     -- Loop button with beautiful styling
     if state.looping ~= 0 then
-        term.setBackgroundColor(colors.cyan)
+        term.setBackgroundColor(colors.yellow)
         term.setTextColor(colors.black)
     else
         term.setBackgroundColor(colors.lightGray)
         term.setTextColor(colors.gray)
     end
-    term.setCursorPos(22, buttonY)
+    term.setCursorPos(23, buttonY)
     if state.looping == 0 then
         term.write(" ⟲ Off ")
     elseif state.looping == 1 then
@@ -283,51 +322,68 @@ function youtubePlayer.drawNowPlaying(state)
         term.write(" ⟲ Song ")
     end
 
-    -- Beautiful modern volume slider
+    -- Beautiful volume slider with yellow accent
     term.setBackgroundColor(colors.black)
-    term.setTextColor(colors.white)
-    term.setCursorPos(2, 11)
+    term.setTextColor(colors.yellow)
+    term.setCursorPos(3, 12)
     term.write("Volume:")
     
-    term.setCursorPos(2, 12)
-    paintutils.drawBox(2, 12, 25, 12, colors.gray)
+    term.setCursorPos(3, 13)
+    paintutils.drawBox(3, 13, 26, 13, colors.gray)
     local width = math.floor(24 * (state.volume / 3) + 0.5) - 1
     if width >= 0 then
-        paintutils.drawBox(2, 12, 2 + width, 12, colors.cyan)
+        paintutils.drawBox(3, 13, 3 + width, 13, colors.yellow)
     end
-    term.setCursorPos(27, 12)
+    term.setCursorPos(28, 13)
     term.setBackgroundColor(colors.black)
-    term.setTextColor(colors.cyan)
+    term.setTextColor(colors.yellow)
     term.write(math.floor(100 * (state.volume / 3) + 0.5) .. "%")
 
-    -- Queue with beautiful modern styling
+    -- Queue with beautiful styling and yellow accent
     if #state.queue > 0 then
         term.setBackgroundColor(colors.black)
-        term.setTextColor(colors.white)
-        term.setCursorPos(2, 14)
+        term.setTextColor(colors.yellow)
+        term.setCursorPos(3, 15)
         term.write("Queue (" .. #state.queue .. " songs):")
         
         for i = 1, #state.queue do
-            if 15 + (i-1)*2 >= state.height - 3 then break end
+            if 16 + (i-1)*2 >= state.height - 3 then break end
             term.setTextColor(colors.white)
-            term.setCursorPos(2, 15 + (i-1)*2)
+            term.setCursorPos(3, 16 + (i-1)*2)
             term.write(i .. ". " .. state.queue[i].name)
             term.setTextColor(colors.lightGray)
-            term.setCursorPos(2, 16 + (i-1)*2)
+            term.setCursorPos(3, 17 + (i-1)*2)
             term.write("   " .. state.queue[i].artist)
         end
+    else
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.lightGray)
+        term.setCursorPos(3, 15)
+        term.write("Queue is empty")
+        term.setCursorPos(3, 16)
+        term.write("Add songs from the Search tab")
     end
 end
 
 function youtubePlayer.drawSearch(state)
-    -- Beautiful modern search box
+    -- Welcome message with yellow accent (like main menu)
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.yellow)
+    term.setCursorPos(3, 4)
+    term.write("Search YouTube Music:")
+    
+    term.setTextColor(colors.lightGray)
+    term.setCursorPos(3, 5)
+    term.write("Enter a song name, artist, or paste a YouTube URL")
+
+    -- Beautiful search box with main menu styling
     term.setBackgroundColor(colors.white)
     term.setTextColor(colors.black)
     
     -- Draw search box border
-    paintutils.drawBox(2, 3, state.width - 1, 5, colors.white)
+    paintutils.drawBox(3, 7, state.width - 2, 9, colors.white)
     
-    term.setCursorPos(3, 4)
+    term.setCursorPos(4, 8)
     local displayText = state.last_search or "🔍 Search YouTube or paste URL..."
     if not state.last_search then
         term.setTextColor(colors.gray)
@@ -336,54 +392,58 @@ function youtubePlayer.drawSearch(state)
     end
     term.write(displayText)
 
-    -- Search results with beautiful modern styling
+    -- Search results with beautiful styling and contrasting colors
     if state.search_results then
         term.setBackgroundColor(colors.black)
-        term.setTextColor(colors.white)
-        term.setCursorPos(2, 6)
+        term.setTextColor(colors.yellow)
+        term.setCursorPos(3, 11)
         term.write("Results (" .. #state.search_results .. " found):")
         
         for i = 1, #state.search_results do
             local result = state.search_results[i]
-            local y1 = 7 + (i-1)*3  -- More spacing for better look
-            local y2 = 8 + (i-1)*3
+            local y1 = 12 + (i-1)*3  -- More spacing for better look
+            local y2 = 13 + (i-1)*3
             
             if y2 >= state.height - 3 then break end
             
-            -- Beautiful result styling with hover effect
+            -- Beautiful result styling with contrasting colors
+            term.setBackgroundColor(colors.lightBlue)
+            term.setTextColor(colors.black)
+            term.setCursorPos(3, y1)
+            term.clearLine()
+            term.write(" ♪ " .. result.name .. " ")
+            
             term.setBackgroundColor(colors.black)
-            term.setTextColor(colors.white)
-            term.setCursorPos(2, y1)
-            term.clearLine()
-            term.write("♪ " .. result.name)
-            
             term.setTextColor(colors.lightGray)
-            term.setCursorPos(2, y2)
+            term.setCursorPos(3, y2)
             term.clearLine()
-            term.write("  " .. result.artist)
+            term.write("   " .. result.artist)
             
-            -- Add type indicator
+            -- Add type indicator with yellow accent
             if result.type == "playlist" then
-                term.setTextColor(colors.cyan)
-                term.setCursorPos(state.width - 10, y1)
+                term.setTextColor(colors.yellow)
+                term.setCursorPos(state.width - 12, y1)
+                term.setBackgroundColor(colors.black)
                 term.write("[Playlist]")
             end
         end
     else
-        -- Search status with beautiful modern colors
+        -- Search status with beautiful colors and yellow accents
         term.setBackgroundColor(colors.black)
         if state.search_error then
             term.setTextColor(colors.red)
-            term.setCursorPos(2, 7)
+            term.setCursorPos(3, 11)
             term.write("✗ Search failed - please try again")
         elseif state.last_search_url then
             term.setTextColor(colors.yellow)
-            term.setCursorPos(2, 7)
+            term.setCursorPos(3, 11)
             term.write("⟳ Searching...")
         else
             term.setTextColor(colors.lightGray)
-            term.setCursorPos(2, 7)
+            term.setCursorPos(3, 11)
             term.write("💡 Tip: You can paste YouTube video or playlist links.")
+            term.setCursorPos(3, 12)
+            term.write("    Click the search box above to get started!")
         end
     end
 end
@@ -400,8 +460,8 @@ function youtubePlayer.uiLoop(state, speakers)
             parallel.waitForAny(
                 function()
                     -- Simple search input
-                    term.setCursorPos(3, 4)
-                    term.setBackgroundColor(colors.lightGray)
+                    term.setCursorPos(4, 8)
+                    term.setBackgroundColor(colors.white)
                     term.setTextColor(colors.black)
                     local input = read()
                     
@@ -432,7 +492,7 @@ function youtubePlayer.uiLoop(state, speakers)
                                 x, y = param2, param3  -- monitor_touch: side, x, y
                             end
                             
-                            if y < 3 or y > 5 or x < 2 or x > state.width-1 then
+                            if y < 7 or y > 9 or x < 3 or x > state.width-2 then
                                 state.waiting_for_input = false
                                 os.queueEvent("redraw_screen")
                                 break
@@ -458,14 +518,14 @@ function youtubePlayer.uiLoop(state, speakers)
 
                         if button == 1 then
                             -- Back to menu button (footer at height-1)
-                            if y == state.height - 1 and x >= 2 and x <= 16 then
+                            if y == state.height - 1 and x >= 2 and x <= 18 then
                                 state.logger.info("YouTube", "Back to menu button clicked! Exiting...")
                                 
                                 -- Visual feedback
                                 term.setBackgroundColor(colors.white)
                                 term.setTextColor(colors.black)
                                 term.setCursorPos(2, state.height - 1)
-                                term.write(" Back to Menu ")
+                                term.write(" ← Back to Menu ")
                                 sleep(0.3)
                                 
                                 shouldExit = true
@@ -484,32 +544,32 @@ function youtubePlayer.uiLoop(state, speakers)
                             end
                             
                             if state.tab == 2 and state.in_search_result == false then
-                                -- Search box click
-                                if y >= 3 and y <= 5 and x >= 2 and x <= state.width-1 then
+                                -- Search box click (updated coordinates)
+                                if y >= 7 and y <= 9 and x >= 3 and x <= state.width-2 then
                                     -- Simple search box styling
-                                    for searchY = 3, 5 do
-                                        term.setCursorPos(2, searchY)
+                                    for searchY = 7, 9 do
+                                        term.setCursorPos(3, searchY)
                                         term.setBackgroundColor(colors.white)
                                         term.clearLine()
                                     end
                                     state.waiting_for_input = true
                                 end
             
-                                -- Search result click (like reference)
+                                -- Search result click (updated coordinates)
                                 if state.search_results then
                                     for i=1,#state.search_results do
-                                        local resultY1 = 7 + (i-1)*3  -- Title line
-                                        local resultY2 = 8 + (i-1)*3  -- Artist line
+                                        local resultY1 = 12 + (i-1)*3  -- Title line
+                                        local resultY2 = 13 + (i-1)*3  -- Artist line
                                         
                                         if y == resultY1 or y == resultY2 then
                                             -- Visual feedback
                                             term.setBackgroundColor(colors.white)
                                             term.setTextColor(colors.black)
-                                            term.setCursorPos(2, resultY1)
+                                            term.setCursorPos(3, resultY1)
                                             term.clearLine()
                                             term.write(state.search_results[i].name)
                                             term.setTextColor(colors.gray)
-                                            term.setCursorPos(2, resultY2)
+                                            term.setCursorPos(3, resultY2)
                                             term.clearLine()
                                             term.write(state.search_results[i].artist)
                                             sleep(0.2)
@@ -525,14 +585,14 @@ function youtubePlayer.uiLoop(state, speakers)
                                     end
                                 end
                             elseif state.tab == 2 and state.in_search_result == true then
-                                -- Action menu clicks (original coordinates: y=6,8,10,13)
+                                -- Action menu clicks (updated coordinates: y=7,9,11,13)
                                 term.setBackgroundColor(colors.white)
                                 term.setTextColor(colors.black)
             
-                                if y == 6 then
-                                    term.setCursorPos(2,6)
+                                if y == 7 then
+                                    term.setCursorPos(2,7)
                                     term.clearLine()
-                                    term.write("Play now")
+                                    term.write(" ▶ Play now ")
                                     sleep(0.2)
                                     state.in_search_result = false
                                     for _, speaker in ipairs(speakers) do
@@ -556,10 +616,10 @@ function youtubePlayer.uiLoop(state, speakers)
                                     os.queueEvent("audio_update")
                                 end
             
-                                if y == 8 then
-                                    term.setCursorPos(2,8)
+                                if y == 9 then
+                                    term.setCursorPos(2,9)
                                     term.clearLine()
-                                    term.write("Play next")
+                                    term.write(" ⏭ Play next ")
                                     sleep(0.2)
                                     state.in_search_result = false
                                     if state.search_results[state.clicked_result].type == "playlist" then
@@ -572,10 +632,10 @@ function youtubePlayer.uiLoop(state, speakers)
                                     os.queueEvent("audio_update")
                                 end
             
-                                if y == 10 then
-                                    term.setCursorPos(2,10)
+                                if y == 11 then
+                                    term.setCursorPos(2,11)
                                     term.clearLine()
-                                    term.write("Add to queue")
+                                    term.write(" + Add to queue ")
                                     sleep(0.2)
                                     state.in_search_result = false
                                     if state.search_results[state.clicked_result].type == "playlist" then
@@ -591,21 +651,21 @@ function youtubePlayer.uiLoop(state, speakers)
                                 if y == 13 then
                                     term.setCursorPos(2,13)
                                     term.clearLine()
-                                    term.write("Cancel")
+                                    term.write(" ✗ Cancel ")
                                     sleep(0.2)
                                     state.in_search_result = false
                                 end
             
                                 youtubePlayer.redrawScreen(state)
                             elseif state.tab == 1 and state.in_search_result == false then
-                                -- Now playing tab clicks
-                                if y == 9 then -- Control buttons row (updated from y=8)
-                                    -- Play/stop button
-                                    if x >= 2 and x < 11 then
+                                -- Now playing tab clicks (updated coordinates)
+                                if y == 10 then -- Control buttons row
+                                    -- Play/stop button (updated coordinates)
+                                    if x >= 3 and x < 12 then
                                         if state.playing or state.now_playing ~= nil or #state.queue > 0 then
                                             term.setBackgroundColor(colors.white)
                                             term.setTextColor(colors.black)
-                                            term.setCursorPos(2, 9)
+                                            term.setCursorPos(3, 10)
                                             if state.playing then
                                                 term.write(" ⏹ Stop ")
                                             else 
@@ -639,11 +699,11 @@ function youtubePlayer.uiLoop(state, speakers)
                                     end
             
                                     -- Skip button (updated coordinates)
-                                    if x >= 12 and x < 21 then
+                                    if x >= 13 and x < 22 then
                                         if state.now_playing ~= nil or #state.queue > 0 then
                                             term.setBackgroundColor(colors.white)
                                             term.setTextColor(colors.black)
-                                            term.setCursorPos(12, 9)
+                                            term.setCursorPos(13, 10)
                                             term.write(" ⏭ Skip ")
                                             sleep(0.2)
 
@@ -673,7 +733,7 @@ function youtubePlayer.uiLoop(state, speakers)
                                     end
             
                                     -- Loop button (updated coordinates)
-                                    if x >= 22 and x < 30 then
+                                    if x >= 23 and x < 31 then
                                         if state.looping == 0 then
                                             state.looping = 1
                                         elseif state.looping == 1 then
@@ -684,10 +744,10 @@ function youtubePlayer.uiLoop(state, speakers)
                                     end
                                 end
  
-                                -- Volume slider (updated from y=10 to y=12)
-                                if y == 12 then
-                                    if x >= 2 and x < 26 then
-                                        state.volume = (x - 2) / 24 * 3.0
+                                -- Volume slider (updated coordinates)
+                                if y == 13 then
+                                    if x >= 3 and x < 27 then
+                                        state.volume = (x - 3) / 24 * 3.0
                                         state.speakerManager.setVolume(state.volume)
                                     end
                                 end
