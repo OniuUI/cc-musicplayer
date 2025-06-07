@@ -1500,7 +1500,6 @@ function radioHost.handleNowPlayingClicks(state, x, y, speakers)
         local sliderPos = x - 4
         local newVolume = (sliderPos / 20) * 3.0
         state.volume = math.max(0, math.min(3.0, newVolume))
-        state.speakerManager.setVolume(state.volume)
         state.logger.info("RadioHost", "Volume set to " .. state.volume)
         return
     end
@@ -1508,13 +1507,7 @@ function radioHost.handleNowPlayingClicks(state, x, y, speakers)
     -- Mute/Unmute button
     if y == 11 and x >= 25 and x <= 36 then
         state.muted = not state.muted
-        if state.muted then
-            state.speakerManager.setVolume(0)
-            state.logger.info("RadioHost", "Audio muted")
-        else
-            state.speakerManager.setVolume(state.volume)
-            state.logger.info("RadioHost", "Audio unmuted")
-        end
+        state.logger.info("RadioHost", "Audio " .. (state.muted and "muted" or "unmuted"))
         return
     end
     
@@ -1637,8 +1630,9 @@ function radioHost.audioLoop(state, speakers)
                             for i, speaker in ipairs(speakers) do 
                                 fn[i] = function()
                                     local name = peripheral.getName(speaker)
+                                    local playVolume = state.muted and 0 or state.volume
                                     if #speakers > 1 then
-                                        if speaker.playAudio(state.buffer, state.volume) then
+                                        if speaker.playAudio(state.buffer, playVolume) then
                                             parallel.waitForAny(
                                                 function()
                                                     repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
@@ -1653,7 +1647,7 @@ function radioHost.audioLoop(state, speakers)
                                             end
                                         end
                                     else
-                                        while not speaker.playAudio(state.buffer, state.volume) do
+                                        while not speaker.playAudio(state.buffer, playVolume) do
                                             parallel.waitForAny(
                                                 function()
                                                     repeat until select(2, os.pullEvent("speaker_audio_empty")) == name

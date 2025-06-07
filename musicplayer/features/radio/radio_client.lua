@@ -582,13 +582,32 @@ end
 
 function radioClient.handleNowPlayingClicks(state, x, y, speakers)
     -- Volume slider click
-    if y == 14 and x >= 4 and x <= 24 then
+    if y == 11 and x >= 4 and x <= 24 and not state.muted then
         local sliderPos = x - 4
         local newVolume = (sliderPos / 20) * 3.0
         state.volume = math.max(0, math.min(3.0, newVolume))
-        state.speakerManager.setVolume(state.volume)
         state.logger.info("RadioClient", "Volume set to " .. state.volume)
         return
+    end
+    
+    -- Mute/Unmute button
+    if y == 11 and x >= 25 and x <= 36 then
+        state.muted = not state.muted
+        state.logger.info("RadioClient", "Audio " .. (state.muted and "muted" or "unmuted"))
+        return
+    end
+    
+    -- Station controls
+    if y == 13 then
+        if x >= 3 and x <= 12 then -- Connect/Disconnect
+            if state.connected then
+                radioClient.disconnect(state)
+            else
+                radioClient.connectToStation(state, speakers)
+            end
+        elseif x >= 14 and x <= 22 then -- Refresh
+            radioClient.refreshStations(state)
+        end
     end
 end
 
@@ -720,40 +739,33 @@ function radioClient.audioLoop(state, speakers)
                 -- Create speaker functions for parallel execution
                 local speakerFunctions = {}
                 
-                for i, speaker in ipairs(speakers) do
+                for i, speaker in ipairs(speakers) do 
                     speakerFunctions[i] = function()
                         local name = peripheral.getName(speaker)
-                        
+                        local playVolume = state.muted and 0 or state.volume
                         if #speakers > 1 then
-                            -- Multiple speakers: wait for audio buffer to be consumed
-                            if speaker.playAudio(audioData, state.volume) then
+                            if speaker.playAudio(audioData, playVolume) then
                                 parallel.waitForAny(
                                     function()
                                         repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
                                     end,
                                     function()
-                                        os.pullEvent("playback_stopped")
+                                        local event = os.pullEvent("playback_stopped")
                                         return
                                     end
                                 )
                             end
                         else
-                            -- Single speaker: retry until buffer is accepted
-                            while not speaker.playAudio(audioData, state.volume) do
+                            while not speaker.playAudio(audioData, playVolume) do
                                 parallel.waitForAny(
                                     function()
                                         repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
                                     end,
                                     function()
-                                        os.pullEvent("playback_stopped")
+                                        local event = os.pullEvent("playback_stopped")
                                         return
                                     end
                                 )
-                                
-                                -- Check if we should stop playing
-                                if not state.playing or state.connection_status ~= "connected" then
-                                    return
-                                end
                             end
                         end
                     end
