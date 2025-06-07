@@ -628,6 +628,9 @@ function radioClient.scanForStations(state)
     state.scan_start_time = os.clock()
     state.stations = {}
     
+    -- Open broadcast channel to listen for announcements
+    radioProtocol.openBroadcastChannel()
+    
     -- Send discovery request
     local discoveryRequest = {
         type = "discovery_request",
@@ -636,7 +639,7 @@ function radioClient.scanForStations(state)
     }
     
     radioProtocol.broadcast(discoveryRequest)
-    state.logger.info("RadioClient", "Discovery request sent")
+    state.logger.info("RadioClient", "Discovery request sent, listening on broadcast channel")
 end
 
 function radioClient.connectToStation(state, station)
@@ -644,12 +647,21 @@ function radioClient.connectToStation(state, station)
         return
     end
     
-    state.logger.info("RadioClient", "Connecting to station: " .. station.station_name)
+    state.logger.info("RadioClient", "Connecting to station: " .. station.station_name .. " (ID: " .. station.station_id .. ")")
     
     state.connection_status = "connecting"
     state.connecting_to_station = station
     state.connection_start_time = os.clock()
     state.connection_error = nil
+    
+    -- Calculate channels
+    local stationChannel = radioProtocol.getStationChannel(station.station_id)
+    local clientChannel = radioProtocol.getClientChannel(os.getComputerID())
+    
+    state.logger.info("RadioClient", "Using station channel: " .. stationChannel .. ", client channel: " .. clientChannel)
+    
+    -- Open our client channel to receive response
+    radioProtocol.openChannel(clientChannel)
     
     -- Send join request to station
     local joinRequest = {
@@ -658,16 +670,9 @@ function radioClient.connectToStation(state, station)
         timestamp = os.epoch("utc")
     }
     
-    local stationChannel = radioProtocol.getStationChannel(station.station_id)
-    local clientChannel = radioProtocol.getClientChannel(os.getComputerID())
-    
-    -- Open our client channel to receive response
-    radioProtocol.openChannel(clientChannel)
-    
-    -- Send join request
     radioProtocol.sendToChannel(stationChannel, joinRequest)
     
-    state.logger.info("RadioClient", "Join request sent to station " .. station.station_id)
+    state.logger.info("RadioClient", "Join request sent to station " .. station.station_id .. " on channel " .. stationChannel)
 end
 
 function radioClient.disconnect(state)

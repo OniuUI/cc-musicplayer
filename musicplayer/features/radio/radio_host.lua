@@ -89,6 +89,9 @@ function radioHost.init(systemModules)
         state.logger.warn("RadioHost", "No wireless modem found - radio hosting disabled")
     else
         state.logger.info("RadioHost", "Radio protocol initialized for hosting")
+        -- Open broadcast channel immediately to listen for discovery requests
+        radioProtocol.openBroadcastChannel()
+        state.logger.info("RadioHost", "Opened broadcast channel for discovery requests")
     end
     
     return state
@@ -746,7 +749,10 @@ function radioHost.handleNetworkMessage(state, message, replyChannel)
 end
 
 function radioHost.handleDiscoveryRequest(state, data, replyChannel)
+    state.logger.info("RadioHost", "Processing discovery request from client " .. (data.client_id or "unknown"))
+    
     if not state.is_broadcasting then
+        state.logger.info("RadioHost", "Not broadcasting - not responding to discovery request")
         return -- Don't respond if not broadcasting
     end
     
@@ -762,12 +768,15 @@ function radioHost.handleDiscoveryRequest(state, data, replyChannel)
         timestamp = os.epoch("utc")
     }
     
+    state.logger.info("RadioHost", "Sending station announcement: " .. state.station_name)
     radioProtocol.broadcast(announcement)
-    state.logger.info("RadioHost", "Responded to discovery request from Computer-" .. data.client_id)
+    state.logger.info("RadioHost", "Responded to discovery request from Computer-" .. (data.client_id or "unknown"))
 end
 
 function radioHost.handleJoinRequest(state, data, replyChannel)
     local listenerId = data.listener_id
+    
+    state.logger.info("RadioHost", "Processing join request from Computer-" .. listenerId .. " on reply channel " .. replyChannel)
     
     if #state.listeners >= state.max_listeners then
         -- Station full
@@ -777,6 +786,7 @@ function radioHost.handleJoinRequest(state, data, replyChannel)
             reason = "Station full",
             max_listeners = state.max_listeners
         }
+        state.logger.info("RadioHost", "Rejecting join request - station full (" .. #state.listeners .. "/" .. state.max_listeners .. ")")
         radioProtocol.sendToChannel(replyChannel, response)
         return
     end
@@ -795,6 +805,7 @@ function radioHost.handleJoinRequest(state, data, replyChannel)
                 playlist = state.playlist,
                 current_song_index = state.current_song_index
             }
+            state.logger.info("RadioHost", "Client already connected - sending current state")
             radioProtocol.sendToChannel(replyChannel, response)
             return
         end
@@ -815,6 +826,7 @@ function radioHost.handleJoinRequest(state, data, replyChannel)
         current_song_index = state.current_song_index
     }
     
+    state.logger.info("RadioHost", "Sending join response to Computer-" .. listenerId)
     radioProtocol.sendToChannel(replyChannel, response)
     
     state.logger.info("RadioHost", "Listener joined: Computer-" .. listenerId .. " (" .. #state.listeners .. "/" .. state.max_listeners .. ")")
@@ -1900,16 +1912,23 @@ function radioHost.networkLoop(state)
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
         if message and type(message) == "table" then
-            state.logger.info("RadioHost", "Received message on channel " .. channel .. " from " .. (distance and ("distance " .. distance) or "unknown"))
+            state.logger.info("RadioHost", "Received message on channel " .. channel .. " (reply: " .. replyChannel .. ") from distance " .. (distance or "unknown"))
             
             if radioProtocol.isValidMessage(message) then
                 local data = radioProtocol.extractMessageData(message)
                 if data then
-                    state.logger.info("RadioHost", "Message type: " .. (data.type or "unknown"))
+                    state.logger.info("RadioHost", "Valid message type: " .. (data.type or "unknown") .. " from client " .. (data.client_id or data.listener_id or "unknown"))
+                    
+                    -- Handle discovery requests even when not broadcasting (for debugging)
+                    if data.type == "discovery_request" then
+                        state.logger.info("RadioHost", "Discovery request received - Broadcasting: " .. tostring(state.is_broadcasting))
+                    end
                 end
+                
+                radioHost.handleNetworkMessage(state, message, replyChannel)
+            else
+                state.logger.warn("RadioHost", "Invalid message received on channel " .. channel)
             end
-            
-            radioHost.handleNetworkMessage(state, message, replyChannel)
         end
         
         sleep(0.1)
