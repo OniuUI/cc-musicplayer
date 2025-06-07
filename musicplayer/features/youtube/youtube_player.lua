@@ -133,15 +133,13 @@ function youtubePlayer.handleInputWithTimeout(state, speakers, timeout)
         if event == "mouse_click" then
             button, x, y = param1, param2, param3
         else -- monitor_touch
-            button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+            -- monitor_touch returns: event, side, x, y (no button parameter)
+            -- param1 = side, param2 = x, param3 = y
+            button, x, y = 1, param2, param3  -- Treat monitor touch as left click, x=param2, y=param3
         end
-        
-        local success, result = pcall(youtubePlayer.handleClick, state, speakers, button, x, y)
-        if success and result then
+        local result = youtubePlayer.handleClick(state, speakers, button, x, y)
+        if result then
             return result
-        elseif not success then
-            state.logger.error("YouTube", "Error handling click: " .. tostring(result))
-            return "redraw"
         end
     elseif event == "redraw_screen" then
         return "redraw"
@@ -216,12 +214,23 @@ function youtubePlayer.handleInput(state, speakers)
             end,
             function()
                 while state.waiting_for_input do
-                    local event, button, x, y = os.pullEvent("mouse_click")
-                    -- Use original working coordinates for click-outside detection
-                    if y < 3 or y > 5 or x < 2 or x > state.width-1 then
-                        state.waiting_for_input = false
-                        os.queueEvent("redraw_screen")
-                        break
+                    local event, param1, param2, param3 = os.pullEvent()
+                    if event == "mouse_click" or event == "monitor_touch" then
+                        local button, x, y
+                        if event == "mouse_click" then
+                            button, x, y = param1, param2, param3
+                        else -- monitor_touch
+                            -- monitor_touch returns: event, side, x, y (no button parameter)
+                            -- param1 = side, param2 = x, param3 = y
+                            button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+                        end
+                        
+                        -- Use original working coordinates for click-outside detection
+                        if y < 3 or y > 5 or x < 2 or x > state.width-1 then
+                            state.waiting_for_input = false
+                            os.queueEvent("redraw_screen")
+                            break
+                        end
                     end
                 end
             end
@@ -238,7 +247,9 @@ function youtubePlayer.handleInput(state, speakers)
             if event == "mouse_click" then
                 button, x, y = param1, param2, param3
             else -- monitor_touch
-                button, x, y = 1, param2, param3  -- Treat monitor touch as left click
+                -- monitor_touch returns: event, side, x, y (no button parameter)
+                -- param1 = side, param2 = x, param3 = y
+                button, x, y = 1, param2, param3  -- Treat monitor touch as left click, x=param2, y=param3
             end
             local result = youtubePlayer.handleClick(state, speakers, button, x, y)
             if result then

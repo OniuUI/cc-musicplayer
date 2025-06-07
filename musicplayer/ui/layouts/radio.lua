@@ -234,8 +234,10 @@ function radioUI.handleStationInput(state)
             local button, x, y
             if event == "mouse_click" then
                 button, x, y = param1, param2, param3
-            else
-                button, x, y = 1, param2, param3
+            else -- monitor_touch
+                -- monitor_touch returns: event, side, x, y (no button parameter)
+                -- param1 = side, param2 = x, param3 = y
+                button, x, y = 1, param2, param3  -- Treat monitor touch as left click
             end
             
             -- Check station clicks
