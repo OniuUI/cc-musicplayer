@@ -380,6 +380,14 @@ end
 function youtubePlayer.handleClick(state, speakers, button, x, y)
     state.logger.debug("YouTube", "Processing click at (" .. x .. "," .. y .. ") button=" .. button .. " tab=" .. state.tab .. " in_search_result=" .. tostring(state.in_search_result))
     
+    -- Back to menu button check (moved to top and outside other conditions)
+    -- "Back to Menu" button text is " Back to Menu " = 14 characters, so button spans x=2 to x=15
+    -- Adding some extra margin to ensure we catch clicks on the button
+    if y == state.height - 3 and x >= 2 and x <= 17 then
+        state.logger.info("YouTube", "Back to menu button clicked at (" .. x .. "," .. y .. ")")
+        return "back_to_menu"
+    end
+    
     if button == 1 or button == 2 then -- Handle both left and right clicks
         -- Tab clicks (adjusted for header)
         if state.in_search_result == false then
@@ -454,15 +462,9 @@ function youtubePlayer.handleClick(state, speakers, button, x, y)
                 return result
             end
         end
-        
-        -- Back to menu button (adjusted for footer)
-        if y == state.height - 3 and x >= 2 and x <= 15 then
-            state.logger.debug("YouTube", "Back to menu button clicked")
-            return "back_to_menu"
-        end
     end
     
-    state.logger.debug("YouTube", "Click not handled by any UI element")
+    state.logger.debug("YouTube", "Click not handled by any UI element - coordinates: (" .. x .. "," .. y .. "), screen height: " .. state.height)
 end
 
 -- Handle song action menu clicks (adjusted for header)
