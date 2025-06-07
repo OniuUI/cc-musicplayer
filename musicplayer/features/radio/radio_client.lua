@@ -588,21 +588,27 @@ function radioClient.scanForStations(state)
         return
     end
     
-    state.scanning = true
-    state.logger.info("RadioClient", "Scanning for radio stations...")
-    
-    -- Scan in background
-    local function scanAsync()
-        local stations = radioProtocol.scanForStations(5)
-        state.stations = stations
-        state.scanning = false
-        state.last_scan_time = os.epoch("utc") / 1000
-        
-        state.logger.info("RadioClient", "Found " .. #stations .. " radio stations")
+    if state.scanning then
+        return -- Already scanning
     end
     
-    -- Run scan in parallel
-    parallel.waitForAny(scanAsync, function() sleep(0.1) end)
+    state.scanning = true
+    state.scan_start_time = os.clock()
+    state.logger.info("RadioClient", "Starting station scan...")
+    
+    -- Open broadcast channel and send discovery request
+    radioProtocol.openBroadcastChannel()
+    
+    local discoveryRequest = {
+        type = "discovery_request",
+        client_id = os.getComputerID(),
+        timestamp = os.epoch("utc")
+    }
+    
+    radioProtocol.broadcast(discoveryRequest)
+    
+    -- Reset stations list for new scan
+    state.stations = {}
 end
 
 function radioClient.connectToStation(state, station, speakers)
@@ -684,6 +690,16 @@ function radioClient.networkLoop(state)
     while true do
         local currentTime = os.epoch("utc") / 1000
         
+        -- Handle station scanning timeout
+        if state.scanning and state.scan_start_time then
+            if (os.clock() - state.scan_start_time) >= 5 then -- 5 second timeout
+                state.scanning = false
+                state.last_scan_time = currentTime
+                state.logger.info("RadioClient", "Station scan completed: " .. #state.stations .. " stations found")
+                os.queueEvent("redraw_screen")
+            end
+        end
+        
         -- Send periodic ping to maintain connection
         if state.connection_status == "connected" and state.connected_station then
             if (currentTime - state.last_ping_time) >= state.ping_interval then
@@ -696,6 +712,46 @@ function radioClient.networkLoop(state)
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
         if message and type(message) == "table" then
+            -- Handle station discovery responses
+            if state.scanning and radioProtocol.isValidMessage(message) then
+                local data = radioProtocol.extractMessageData(message)
+                if data and data.type == "station_announcement" then
+                    -- Check if we already have this station
+                    local found = false
+                    for _, station in ipairs(state.stations) do
+                        if station.station_id == data.station_id then
+                            -- Update existing station info
+                            station.station_name = data.station_name
+                            station.station_description = data.station_description
+                            station.listener_count = data.listener_count
+                            station.max_listeners = data.max_listeners
+                            station.now_playing = data.now_playing
+                            station.last_seen = data.timestamp
+                            found = true
+                            break
+                        end
+                    end
+                    
+                    if not found then
+                        -- Add new station
+                        table.insert(state.stations, {
+                            station_id = data.station_id,
+                            station_name = data.station_name,
+                            station_description = data.station_description,
+                            listener_count = data.listener_count or 0,
+                            max_listeners = data.max_listeners or 10,
+                            now_playing = data.now_playing,
+                            last_seen = data.timestamp,
+                            distance = distance
+                        })
+                        
+                        state.logger.info("RadioClient", "Found station: " .. data.station_name)
+                        os.queueEvent("redraw_screen")
+                    end
+                end
+            end
+            
+            -- Handle other network messages
             radioClient.handleNetworkMessage(state, message)
         end
         
