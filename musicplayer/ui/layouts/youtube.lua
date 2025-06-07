@@ -144,6 +144,11 @@ end
 function youtubeUI.drawSearchResults(state)
     local theme = themes.getCurrent()
     
+    -- Debug logging
+    if state.logger then
+        state.logger.info("YouTube", "Drawing " .. #state.search_results .. " search results")
+    end
+    
     -- Draw search results with theme colors but original working layout (2 lines per result)
     term.setBackgroundColor(theme.colors.background)
     
@@ -152,8 +157,16 @@ function youtubeUI.drawSearchResults(state)
         local y1 = 7 + (i-1)*2  -- First line (title)
         local y2 = 8 + (i-1)*2  -- Second line (artist)
         
+        -- Debug logging for each result
+        if state.logger then
+            state.logger.debug("YouTube", "Drawing result " .. i .. " '" .. result.name .. "' at y=" .. y1 .. "-" .. y2)
+        end
+        
         -- Don't draw if it would go off screen
         if y2 >= state.height - 2 then
+            if state.logger then
+                state.logger.debug("YouTube", "Result " .. i .. " would go off screen (y=" .. y2 .. " >= " .. (state.height - 2) .. ")")
+            end
             break
         end
         

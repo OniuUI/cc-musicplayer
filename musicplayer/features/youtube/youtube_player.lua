@@ -140,12 +140,15 @@ function youtubePlayer.uiLoop(state, speakers)
                         local button, x, y
                         if event == "mouse_click" then
                             button, x, y = param1, param2, param3
+                            state.logger.debug("YouTube", "MOUSE_CLICK: button=" .. button .. " x=" .. x .. " y=" .. y)
                         else -- monitor_touch
                             button, x, y = 1, param2, param3  -- Treat as left click
+                            state.logger.debug("YouTube", "MONITOR_TOUCH: side=" .. param1 .. " x=" .. x .. " y=" .. y)
                         end
 
                         if button == 1 then
                             state.logger.debug("YouTube", "Click at (" .. x .. "," .. y .. ") - screen size: " .. state.width .. "x" .. state.height)
+                            state.logger.debug("YouTube", "Current state: tab=" .. state.tab .. " in_search_result=" .. tostring(state.in_search_result) .. " search_results=" .. (state.search_results and #state.search_results or "nil"))
                             
                             -- Back to menu button (FIRST CHECK) - adjusted for modern UI
                             -- The button is drawn at (2, state.height - 3) with text " Back to Menu "
@@ -180,28 +183,36 @@ function youtubePlayer.uiLoop(state, speakers)
                                     state.waiting_for_input = true
                                 end
             
-                                -- Search result click (original coordinates still work)
+                                -- Search result click (EXACTLY like original working code)
                                 if state.search_results then
+                                    state.logger.info("YouTube", "Checking search result clicks - have " .. #state.search_results .. " results")
                                     for i=1,#state.search_results do
-                                        local resultY1 = 7 + (i-1)*2
-                                        local resultY2 = 8 + (i-1)*2
+                                        local resultY1 = 7 + (i-1)*2  -- Title line
+                                        local resultY2 = 8 + (i-1)*2  -- Artist line
+                                        state.logger.debug("YouTube", "Result " .. i .. " at y=" .. resultY1 .. "-" .. resultY2 .. ", click at y=" .. y)
+                                        
+                                        -- EXACT match with original: if y == 7 + (i-1)*2 or y == 8 + (i-1)*2
                                         if y == resultY1 or y == resultY2 then
-                                            state.logger.info("YouTube", "Clicked on search result " .. i .. ": " .. state.search_results[i].name)
-                                            -- Use modern themed selection highlight
-                                            local theme = themes.getCurrent()
-                                            term.setBackgroundColor(theme.colors.button_active)
-                                            term.setTextColor(theme.colors.background)
+                                            state.logger.info("YouTube", "CLICKED on search result " .. i .. ": " .. state.search_results[i].name)
+                                            
+                                            -- Visual feedback (like original)
+                                            term.setBackgroundColor(colors.white)
+                                            term.setTextColor(colors.black)
                                             term.setCursorPos(2, resultY1)
                                             term.clearLine()
                                             term.write(state.search_results[i].name)
-                                            term.setTextColor(theme.colors.text_secondary)
+                                            term.setTextColor(colors.gray)
                                             term.setCursorPos(2, resultY2)
                                             term.clearLine()
                                             term.write(state.search_results[i].artist)
                                             sleep(0.2)
+                                            
+                                            -- Set state (like original)
                                             state.in_search_result = true
                                             state.clicked_result = i
-                                            state.logger.info("YouTube", "Setting in_search_result = true, clicked_result = " .. i)
+                                            state.logger.info("YouTube", "Set in_search_result=true, clicked_result=" .. i)
+                                            
+                                            -- Redraw (like original)
                                             youtubeUI.redrawScreen(state)
                                             break
                                         end
