@@ -328,7 +328,11 @@ function radioClient.drawStationList(state)
     elseif state.connection_status == "connecting" then
         term.setTextColor(colors.yellow)
         term.setCursorPos(3, state.height - 4)
-        term.write("🔄 Connecting...")
+        if state.connecting_to_station then
+            term.write("🔄 Connecting to: " .. state.connecting_to_station.station_name)
+        else
+            term.write("🔄 Connecting...")
+        end
         
     elseif state.connection_status == "error" then
         term.setTextColor(colors.red)
@@ -541,6 +545,11 @@ function radioClient.uiLoop(state, speakers)
 end
 
 function radioClient.handleStationListClicks(state, x, y, speakers)
+    -- Don't allow clicks while connecting
+    if state.connection_status == "connecting" then
+        return
+    end
+    
     -- Refresh button
     if y == 5 and x >= state.width - 12 and x <= state.width - 1 then
         radioClient.scanForStations(state)
@@ -618,49 +627,75 @@ function radioClient.connectToStation(state, station, speakers)
     
     state.connection_status = "connecting"
     state.connection_error = nil
+    state.connecting_to_station = station
+    state.connection_start_time = os.clock()
     state.logger.info("RadioClient", "Connecting to station: " .. station.station_name)
     
-    -- Attempt connection
-    local success, response = radioProtocol.joinStation(station.station_id)
+    -- Send join request (non-blocking)
+    local clientId = os.getComputerID()
+    local stationChannel = radioProtocol.getStationChannel(station.station_id)
+    local clientChannel = radioProtocol.getClientChannel(clientId)
     
-    if success then
-        state.connection_status = "connected"
-        state.connected_station = station
-        
-        -- Update state from host response
-        if response.now_playing then
-            state.now_playing = response.now_playing
-        end
-        
-        if response.playing ~= nil then
-            state.playing = response.playing
-        end
-        
-        if response.playlist then
-            state.playlist = response.playlist
-        end
-        
-        if response.current_song_index then
-            state.current_song_index = response.current_song_index
-        end
-        
-        state.logger.info("RadioClient", "Connected to station: " .. station.station_name)
-        
+    -- Open channels
+    radioProtocol.openChannel(stationChannel)
+    radioProtocol.openChannel(clientChannel)
+    
+    -- Send join request
+    local joinRequest = {
+        type = "join_request",
+        listener_id = clientId,
+        timestamp = os.epoch("utc")
+    }
+    
+    local protocolMessage = {
+        protocol_version = "1.0",
+        timestamp = os.epoch("utc"),
+        data = joinRequest
+    }
+    
+    -- Get modem and send request
+    local modem = peripheral.find("modem")
+    if modem then
+        modem.transmit(stationChannel, clientChannel, protocolMessage)
+        state.logger.info("RadioClient", "Join request sent to station " .. station.station_id)
     else
         state.connection_status = "error"
-        state.connection_error = response or "Connection failed"
-        state.logger.error("RadioClient", "Failed to connect: " .. (response or "Unknown error"))
+        state.connection_error = "No modem available"
+        state.logger.error("RadioClient", "No modem available for connection")
     end
 end
 
 function radioClient.disconnectFromStation(state)
     if state.connected_station then
-        radioProtocol.leaveStation(state.connected_station.station_id)
+        -- Send leave request (non-blocking)
+        local clientId = os.getComputerID()
+        local stationChannel = radioProtocol.getStationChannel(state.connected_station.station_id)
+        
+        local leaveRequest = {
+            type = "leave_request",
+            listener_id = clientId,
+            timestamp = os.epoch("utc")
+        }
+        
+        local protocolMessage = {
+            protocol_version = "1.0",
+            timestamp = os.epoch("utc"),
+            data = leaveRequest
+        }
+        
+        -- Get modem and send request
+        local modem = peripheral.find("modem")
+        if modem then
+            modem.transmit(stationChannel, radioProtocol.getClientChannel(clientId), protocolMessage)
+            state.logger.info("RadioClient", "Leave request sent to station: " .. state.connected_station.station_name)
+        end
+        
         state.logger.info("RadioClient", "Disconnected from station: " .. state.connected_station.station_name)
     end
     
     state.connection_status = "disconnected"
     state.connected_station = nil
+    state.connecting_to_station = nil
     state.connection_error = nil
     state.now_playing = nil
     state.playing = false
@@ -696,6 +731,17 @@ function radioClient.networkLoop(state)
                 state.scanning = false
                 state.last_scan_time = currentTime
                 state.logger.info("RadioClient", "Station scan completed: " .. #state.stations .. " stations found")
+                os.queueEvent("redraw_screen")
+            end
+        end
+        
+        -- Handle connection timeout
+        if state.connection_status == "connecting" and state.connection_start_time then
+            if (os.clock() - state.connection_start_time) >= 10 then -- 10 second timeout
+                state.connection_status = "error"
+                state.connection_error = "Connection timeout"
+                state.connecting_to_station = nil
+                state.logger.error("RadioClient", "Connection timeout")
                 os.queueEvent("redraw_screen")
             end
         end
@@ -746,6 +792,49 @@ function radioClient.networkLoop(state)
                         })
                         
                         state.logger.info("RadioClient", "Found station: " .. data.station_name)
+                        os.queueEvent("redraw_screen")
+                    end
+                end
+            end
+            
+            -- Handle connection responses
+            if state.connection_status == "connecting" and state.connecting_to_station then
+                local clientId = os.getComputerID()
+                local clientChannel = radioProtocol.getClientChannel(clientId)
+                
+                if channel == clientChannel and radioProtocol.isValidMessage(message) then
+                    local data = radioProtocol.extractMessageData(message)
+                    if data and data.type == "join_response" then
+                        if data.success then
+                            state.connection_status = "connected"
+                            state.connected_station = state.connecting_to_station
+                            state.connecting_to_station = nil
+                            
+                            -- Update state from host response
+                            if data.now_playing then
+                                state.now_playing = data.now_playing
+                            end
+                            
+                            if data.playing ~= nil then
+                                state.playing = data.playing
+                            end
+                            
+                            if data.playlist then
+                                state.playlist = data.playlist
+                            end
+                            
+                            if data.current_song_index then
+                                state.current_song_index = data.current_song_index
+                            end
+                            
+                            state.logger.info("RadioClient", "Connected to station: " .. state.connected_station.station_name)
+                        else
+                            state.connection_status = "error"
+                            state.connection_error = data.reason or "Connection rejected"
+                            state.connecting_to_station = nil
+                            state.logger.error("RadioClient", "Connection rejected: " .. (data.reason or "Unknown reason"))
+                        end
+                        
                         os.queueEvent("redraw_screen")
                     end
                 end
