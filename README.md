@@ -1,224 +1,159 @@
-# Bognesferga Radio
+# Bognesferga Radio - ComputerCraft Music Bot
 
-A comprehensive music and radio system for ComputerCraft that combines YouTube music streaming with network radio functionality for synchronized playback across multiple computers. Now featuring advanced telemetry and logging capabilities.
+A comprehensive music player system for ComputerCraft with YouTube integration, radio hosting, and network radio client capabilities.
 
 ## Features
 
-### 🎵 YouTube Music Player
-- **YouTube Integration**: Search and stream music directly from YouTube
-- **Modern Touch Interface**: Intuitive click-based UI with visual feedback
-- **Queue Management**: Play now, play next, or add to queue
-- **Loop Modes**: Off, queue loop, or single song loop
-- **Visual Volume Control**: Interactive slider with real-time adjustment
-- **Multi-Speaker Support**: Automatic detection and use of all connected speakers
-
-### 📻 Network Radio System
-- **Radio Stations**: Host your own radio station or connect to others on the server
-- **Synchronized Playback**: All listeners hear the same song at the same time
-- **Station Discovery**: Scan for available radio stations on the network
-- **Playlist Management**: Build and manage playlists for your radio station
-- **Real-time Listener Count**: See how many people are tuned in
-- **Seamless Integration**: Use YouTube search to add songs to radio playlists
-
-### 📊 Advanced Telemetry & Logging
-- **Comprehensive System Detection**: Automatic detection of computer type, peripherals, and capabilities
-- **Dual-Screen Support**: Separate application and debug console displays
-- **Real-time Performance Monitoring**: Memory usage, event tracking, and system health
-- **Detailed Logging**: Session logs, error tracking, and emergency logging
-- **System Health Monitoring**: Peripheral connectivity and performance metrics
-- **Automatic Log Management**: File-based logging with rotation and export capabilities
-
-### 🎨 Enhanced User Experience
-- **Main Menu System**: Choose between YouTube player and network radio
-- **Colorful Interface**: Professional design with cyan/lime accents and rainbow elements
-- **Animated Branding**: "Developed by Forty" rainbow footer
-- **Status Indicators**: Visual feedback for all system states
-- **Responsive Design**: Adapts to different screen sizes
-- **Error Recovery**: Graceful error handling with automatic recovery
+- **YouTube Music Player**: Search and play music from YouTube
+- **Network Radio**: Connect to shared radio stations
+- **Radio Host**: Create your own radio station for others to join
+- **Modern UI**: Beautiful themed interface with component system
+- **Advanced Monitor Support**: Touch-enabled interface for Advanced Monitors
 
 ## Installation
 
-### Quick Install (Recommended)
-```lua
-pastebin get YzZzdRrm download
-```
-
-### Manual Installation
-```lua
-wget https://raw.githubusercontent.com/OniuUI/cc-musicplayer/refs/heads/master/install.lua
-install
-```
+1. Place the `musicplayer` folder in your ComputerCraft computer
+2. Run `lua startup.lua` to start the application
+3. Connect speakers to enable audio playback
 
 ## Requirements
 
-- **ComputerCraft**: CC: Tweaked for Minecraft 1.18.2+
-- **Speaker**: At least one speaker peripheral attached to the computer
-- **Internet Access**: HTTP requests must be enabled in ComputerCraft configuration
-- **Optional**: Monitor(s) for dual-screen telemetry display
-- **Optional**: Wireless modem for network radio functionality
+- ComputerCraft: Tweaked
+- At least one speaker peripheral
+- Internet access for YouTube functionality
+- Advanced Monitor (optional, for touch interface)
 
-### Recommended Setup
-- **Advanced Computer**: For color support and enhanced features
-- **Multiple Monitors**: Primary display for application, secondary for debug console
-- **Multiple Speakers**: For enhanced audio experience
-- **Wireless Modem**: For network radio features
+## Code Architecture Analysis
 
-## Usage
+### Original Working Code vs Current Modular Version
 
-### Getting Started
-1. Run `startup` to launch Bognesferga Radio
-2. Choose from the main menu:
-   - **YouTube Music Player**: Search and play music
-   - **Network Radio**: Connect to shared stations
-   - **Host Radio Station**: Create your own station
-   - **Exit**: Close the application
+#### **Key Differences Identified:**
 
-### YouTube Music Player
-1. Select "YouTube Music Player" from the main menu
-2. Click the "Search" tab to find music
-3. Type your search query and press Enter
-4. Click on search results to add to queue or play immediately
-5. Use the "Now Playing" tab to control playback
-6. Adjust volume with the interactive slider
-7. Use loop controls for repeat functionality
+**1. Action Menu Drawing Logic**
+- **Original**: Action menu drawn inline within `drawSearch()` function
+- **Current**: Action menu separated into `drawSongActionMenu()` with complex redraw logic
+- **Issue**: Multiple redraw calls overwriting the action menu
 
-### Network Radio
-#### Connecting to a Station
-1. Select "Network Radio" from the main menu
-2. Click "Scan for Stations" to find available stations
-3. Select a station from the list
-4. Click "Connect to Selected" to join
+**2. Event Handling**
+- **Original**: Simple, direct event handling in single `uiLoop()` function
+- **Current**: Complex layered event processing with parallel functions
+- **Issue**: Event conflicts and timing issues
 
-#### Hosting a Station
-1. Select "Host Radio Station" from the main menu
-2. Enter a name for your station
-3. Click "Add Songs" to build your playlist
-4. Click "Start Broadcast" to begin streaming
-5. Manage your playlist and control playback
+**3. State Management**
+- **Original**: Simple global variables (`in_search_result`, `clicked_result`, etc.)
+- **Current**: State object with nested properties
+- **Issue**: State synchronization problems
 
-### Telemetry Features
-- **System Information**: View detailed hardware and peripheral information
-- **Performance Monitoring**: Track memory usage and system performance
-- **Log Files**: Access detailed logs in `musicplayer/logs/`
-- **Dual-Screen Mode**: Use separate monitors for application and debugging
-- **Health Monitoring**: Real-time peripheral connectivity status
+**4. UI Redraw Timing**
+- **Original**: Direct `redrawScreen()` calls with immediate effect
+- **Current**: Component-based drawing with multiple redraw triggers
+- **Issue**: Race conditions between UI updates
 
-## Network Radio Setup
+#### **Critical Fixes Needed:**
 
-### Requirements for Network Radio
-- **Wireless Modem**: Attached to the computer (any side)
-- **Network Range**: All computers must be within wireless range
-- **Compatibility**: Works with both wireless and ender modems
+1. **Action Menu Coordinates**: Original uses y=6,8,10,13 vs current y=10,12,14,16
+2. **Redraw Logic**: Original draws action menu inline, current separates it
+3. **Event Flow**: Original has simple click→action flow, current has complex parallel processing
+4. **State Checks**: Original checks `in_search_result` once, current checks multiple times
 
-### Setting Up a Radio Network
-1. Ensure all computers have wireless modems attached
-2. All computers should be within wireless range of each other
-3. One computer hosts a station, others can connect as clients
-4. Multiple stations can operate simultaneously on the same network
+#### **Working Original Action Menu Logic:**
+```lua
+-- In drawSearch() function:
+if in_search_result == true then
+    term.setBackgroundColor(colors.black)
+    term.clear()
+    -- Draw song info at y=2,3
+    -- Draw buttons at y=6,8,10,13
+end
 
-## Architecture
+-- In event handler:
+if y == 6 then -- Play now
+if y == 8 then -- Play next  
+if y == 10 then -- Add to queue
+if y == 13 then -- Cancel
+```
 
-The system is built with a completely modular architecture featuring comprehensive telemetry and clean separation of concerns:
+#### **Current Broken Logic:**
+```lua
+-- In redrawScreen():
+if state.in_search_result then
+    drawSongActionMenu() -- Draws at y=10,12,14,16
+    return
+end
+
+-- In event handler:
+if y == 10 then -- Play now (wrong coordinates)
+```
+
+## API Configuration
+
+- **Base URL**: `https://ipod-2to6magyna-uc.a.run.app/`
+- **Version**: `2.1`
+- **Default Volume**: `1.5`
+- **Max Volume**: `3.0`
+
+## File Structure
 
 ```
-startup.lua          # Main entry point (50 lines) - coordinates all modules
 musicplayer/
-├── config.lua       # Configuration and constants
-├── state.lua        # Global state management
-├── ui.lua           # YouTube player UI rendering
-├── input.lua        # Mouse/keyboard input handling
-├── audio.lua        # Audio streaming and playback
-├── network.lua      # HTTP request/response handling
-├── main.lua         # YouTube player coordination
-├── menu.lua         # Main menu system
-├── radio.lua        # Network radio functionality
-├── radio_ui.lua     # Radio interface rendering
-├── system_init.lua  # System initialization and module loading
-├── app_manager.lua  # Application state and main loop management
-├── input_handlers.lua # Specialized input functions
-├── mode_handlers.lua # Mode-specific loop handlers (YouTube, radio)
-└── telemetry/
-    ├── telemetry.lua      # Main telemetry coordinator
-    ├── logger.lua         # Advanced logging system
-    └── system_detector.lua # Hardware detection
+├── startup.lua              # Main entry point
+├── app_manager.lua          # Application state management
+├── config.lua               # Configuration settings
+├── core/                    # Core system modules
+├── features/                # Feature implementations
+│   ├── menu/               # Main menu system
+│   ├── youtube/            # YouTube player (BROKEN - needs original logic)
+│   └── radio/              # Radio client/host
+├── ui/                     # UI components and themes
+│   ├── components.lua      # Reusable UI components
+│   ├── themes.lua          # Theme system
+│   └── layouts/            # Feature-specific layouts
+└── utils/                  # Utility functions
 ```
 
-### **New Modular Design (v4.0)**
-- **Startup Simplification**: Reduced from 652 lines to 50 lines
-- **Clean Separation**: Each module has a single responsibility
-- **Easy Maintenance**: Individual modules can be updated independently
-- **Better Testing**: Modules can be tested in isolation
-- **Improved Readability**: Code is organized by functionality
+## Known Issues
+
+### YouTube Player Action Menu (CRITICAL)
+- **Status**: BROKEN
+- **Cause**: Modular architecture conflicts with original working logic
+- **Symptoms**: Search results visible, clicks detected, but action menu doesn't appear
+- **Fix Required**: Restore original inline action menu drawing logic
+
+### Event Handling Race Conditions
+- **Status**: UNSTABLE  
+- **Cause**: Complex parallel event processing
+- **Fix Required**: Simplify to original direct event handling
 
 ## Troubleshooting
 
-### No Speakers Found
-- Attach at least one speaker peripheral to any side of the computer
-- For pocket computers, equip a speaker upgrade
-- Check telemetry logs for peripheral detection issues
+### No Audio
+- Ensure speakers are connected to the computer
+- Check volume settings (use volume slider in Now Playing tab)
 
-### Network Radio Issues
-- Ensure wireless modem is attached and functioning
-- Check that computers are within wireless range
-- Verify HTTP is enabled in ComputerCraft configuration
-- Try restarting both host and client computers
-- Check telemetry logs for network connectivity issues
+### Search Not Working
+- Verify internet connection
+- Check if HTTP requests are enabled in ComputerCraft config
 
-### Audio Playback Problems
-- Check internet connectivity
-- Verify the YouTube API is accessible
-- Ensure speakers have adequate power (if using mods that require it)
-- Review audio logs in the telemetry system
+### Touch Events Not Working
+- Ensure you're using an Advanced Monitor (made with gold)
+- Right-click the monitor to generate touch events
+- Regular monitors (made with stone) don't support touch
 
-### Installation Failures
-- Confirm HTTP requests are enabled in server configuration
-- Check that GitHub is accessible from your server
-- Try the pastebin installation method as an alternative
-- Review installation logs for specific error details
+### Action Menu Not Appearing
+- **KNOWN BUG**: Currently broken due to modular architecture conflicts
+- **Workaround**: Use original single-file version until fixed
+- **Fix in Progress**: Restoring original action menu logic
 
-### Telemetry Issues
-- Check `musicplayer/logs/` directory for detailed error logs
-- Verify monitor connections for dual-screen functionality
-- Review system report in `musicplayer/telemetry/system_report.txt`
-- Check emergency logs for critical system issues
+## Development Notes
 
-## Version History
+The current modular architecture, while cleaner and more maintainable, has introduced several regressions compared to the original working single-file version. The primary issue is that the component-based UI system conflicts with the original direct terminal manipulation approach that was proven to work.
 
-- **v3.1**: Restored complete functionality with integrated telemetry system
-- **v3.0**: Added comprehensive telemetry, logging, and dual-screen support
-- **v2.1**: Added main menu system and network radio functionality
-- **v2.0**: Complete rewrite with iPod-style interface and API integration
-- **v1.x**: Original music streaming player
-
-## Advanced Features
-
-### Telemetry System
-- **System Detection**: Automatic identification of computer type and capabilities
-- **Performance Metrics**: Real-time monitoring of memory usage and event processing
-- **Health Monitoring**: Continuous peripheral connectivity checks
-- **Dual-Screen Support**: Separate application and debug displays
-- **Comprehensive Logging**: Multiple log levels with file rotation
-
-### Error Handling
-- **Graceful Recovery**: Automatic error recovery with menu fallback
-- **Emergency Logging**: Critical error capture and reporting
-- **Resource Cleanup**: Proper cleanup of audio streams and network connections
-- **User Feedback**: Clear error messages with troubleshooting guidance
-
-### Performance Optimization
-- **Modular Architecture**: Efficient loading and memory management
-- **Parallel Processing**: Concurrent audio, UI, and network handling
-- **Resource Monitoring**: Automatic garbage collection and memory tracking
-- **Event Optimization**: Efficient event handling and processing
-
-## Support
-
-For issues, feature requests, or contributions, please check the telemetry logs first for detailed error information. The system provides comprehensive logging to help diagnose and resolve issues quickly.
+**Priority fixes needed:**
+1. Restore original action menu drawing logic
+2. Simplify event handling to match original
+3. Fix coordinate mismatches
+4. Resolve redraw timing issues
 
 ## License
 
-This project is open source and available under the MIT License.
-
----
-
-*Enjoy your music and radio experience in ComputerCraft!* 🎵📻
+This project is licensed under the MIT License - see the LICENSE file for details.

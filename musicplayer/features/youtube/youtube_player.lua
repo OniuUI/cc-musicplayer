@@ -222,7 +222,7 @@ function youtubePlayer.uiLoop(state, speakers)
                                     end
                                 end
                             elseif state.tab == 2 and state.in_search_result == true then
-                                -- Search result menu clicks (original coordinates still work)
+                                -- Search result menu clicks (EXACT original coordinates: y=6,8,10,13)
                                 state.logger.info("YouTube", "In song action menu, clicked at (" .. x .. "," .. y .. ")")
                                 local theme = themes.getCurrent()
                                 term.setBackgroundColor(theme.colors.button_active)
