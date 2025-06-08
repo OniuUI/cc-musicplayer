@@ -68,6 +68,14 @@ function radioClient.init(systemModules)
         client_start_offset = 0, -- Offset to sync with host timing
         sync_warnings = 0, -- Count sync warnings before taking action
         
+        -- NEW: Advanced sync tracking
+        sync_samples = {}, -- Store multiple sync measurements
+        sync_sample_count = 0,
+        max_sync_samples = 3, -- Require 3 consistent measurements before adjusting
+        sync_drift_threshold = 2.0, -- Only adjust if drift is > 2 seconds
+        last_sync_adjustment = 0, -- When we last made a sync adjustment
+        sync_adjustment_cooldown = 30, -- Don't adjust more than once per 30 seconds
+        
         -- Network state
         protocol_available = false,
         last_ping_time = 0,
@@ -1228,7 +1236,7 @@ function radioClient.networkLoop(state)
             end
         end
         
-        sleep(0.1)
+        sleep(0.2)
     end
 end
 
@@ -1304,10 +1312,27 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         os.queueEvent("redraw_screen")
         
     elseif data.type == "audio_chunk" then
-        -- Handle audio streaming from host (if implemented)
+        -- Handle audio streaming from host with sync compensation
         if data.audio_data and state.playing and not state.muted then
             -- Only play if we're supposed to be playing and session matches
             if data.playback_session == state.current_playback_session then
+                -- Apply sync compensation if we have a significant offset
+                local currentTime = os.epoch("utc") / 1000
+                local expected_position = currentTime - (state.host_playback_start_time + state.client_start_offset)
+                
+                -- If we're significantly behind or ahead, we might need to skip/delay chunks
+                if state.client_start_offset > 0 then
+                    -- We're supposed to be ahead - check if we should skip this chunk
+                    local chunk_duration = 0.05 -- Approximate chunk duration in seconds
+                    if state.client_start_offset > chunk_duration then
+                        -- Skip this chunk and reduce offset
+                        state.client_start_offset = state.client_start_offset - chunk_duration
+                        state.logger.info("RadioClient", "Skipping audio chunk for sync (offset: " .. string.format("%.2f", state.client_start_offset) .. "s)")
+                        return
+                    end
+                end
+                
+                -- Play the audio chunk
                 radioClient.playAudioChunk(state, data.audio_data)
             end
         end
@@ -1376,12 +1401,18 @@ function radioClient.handleSyncStatus(state, data)
     state.host_playback_start_time = data.playback_start_time or 0
     local host_server_time = data.server_time or currentTime
     
-    -- Calculate time offset between host and client
-    local time_offset = currentTime - host_server_time
+    -- Calculate network latency and time offset
+    local network_latency = (currentTime - host_server_time) / 2 -- Rough estimate
+    local adjusted_host_time = host_server_time + network_latency
     
-    -- Check if this is a new playback session
+    -- Check if this is a new playback session (immediate action required)
     if data.playback_session and data.playback_session ~= state.current_playback_session then
         state.logger.info("RadioClient", "New playback session detected: " .. data.playback_session)
+        
+        -- Reset sync tracking for new session
+        state.sync_samples = {}
+        state.sync_sample_count = 0
+        state.last_sync_adjustment = currentTime
         
         -- Stop current audio to prevent overlap
         if state.player_handle then
@@ -1399,66 +1430,160 @@ function radioClient.handleSyncStatus(state, data)
         state.current_playback_session = data.playback_session
         state.is_playing_audio = false
         
-        -- Reset audio state for new session with SYNC
+        -- Start new session immediately (no sync delay for new sessions)
         if data.playing and data.now_playing then
             state.now_playing = data.now_playing
             state.playing = true
-            state.needs_next_chunk = 1
-            state.decoder = require("cc.audio.dfpwm").make_decoder()
             
-            -- Calculate how far into the song we should be
-            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            -- Calculate initial sync offset
+            local song_elapsed_time = adjusted_host_time - state.host_playback_start_time
             state.client_start_offset = math.max(0, song_elapsed_time)
             
             state.logger.info("RadioClient", "Starting new session: " .. data.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
             
-            -- Start streaming the song from API with calculated offset
-            radioClient.startSyncedAudio(state, state.client_start_offset)
+            -- For audio chunk streaming, we don't need to download - just start receiving chunks
+            state.is_playing_audio = true
+            state.needs_next_chunk = 1
+            state.decoder = require("cc.audio.dfpwm").make_decoder()
+        end
+        
+        return -- Exit early for new sessions
+    end
+    
+    -- Handle ongoing sync for existing session
+    if state.current_playback_session and data.playback_session == state.current_playback_session then
+        -- Calculate where we should be vs where host thinks we should be
+        local host_song_position = adjusted_host_time - state.host_playback_start_time
+        local client_song_position = currentTime - (state.host_playback_start_time + state.client_start_offset)
+        local sync_drift = host_song_position - client_song_position
+        
+        -- Store sync sample
+        table.insert(state.sync_samples, {
+            timestamp = currentTime,
+            host_position = host_song_position,
+            client_position = client_song_position,
+            drift = sync_drift,
+            network_latency = network_latency
+        })
+        
+        state.sync_sample_count = state.sync_sample_count + 1
+        
+        -- Keep only recent samples
+        if #state.sync_samples > state.max_sync_samples then
+            table.remove(state.sync_samples, 1)
+        end
+        
+        state.logger.info("RadioClient", "Sync sample " .. state.sync_sample_count .. ": drift=" .. string.format("%.2f", sync_drift) .. "s, latency=" .. string.format("%.3f", network_latency) .. "s")
+        
+        -- Only consider sync adjustment if we have enough samples and enough time has passed
+        if #state.sync_samples >= state.max_sync_samples and 
+           (currentTime - state.last_sync_adjustment) >= state.sync_adjustment_cooldown then
+            
+            -- Calculate average drift over recent samples
+            local total_drift = 0
+            local consistent_drift = true
+            local first_drift = state.sync_samples[1].drift
+            
+            for _, sample in ipairs(state.sync_samples) do
+                total_drift = total_drift + sample.drift
+                -- Check if drift is consistent (within 0.5 seconds of first sample)
+                if math.abs(sample.drift - first_drift) > 0.5 then
+                    consistent_drift = false
+                end
+            end
+            
+            local average_drift = total_drift / #state.sync_samples
+            
+            state.logger.info("RadioClient", "Sync analysis: avg_drift=" .. string.format("%.2f", average_drift) .. "s, consistent=" .. tostring(consistent_drift))
+            
+            -- Only adjust if drift is significant, consistent, and above threshold
+            if consistent_drift and math.abs(average_drift) > state.sync_drift_threshold then
+                state.logger.warn("RadioClient", "Significant sync drift detected: " .. string.format("%.2f", average_drift) .. "s - adjusting")
+                
+                -- Adjust client offset to compensate for drift
+                state.client_start_offset = state.client_start_offset + average_drift
+                state.last_sync_adjustment = currentTime
+                
+                -- Clear samples after adjustment
+                state.sync_samples = {}
+                state.sync_sample_count = 0
+                
+                -- If drift is very large, we might need to restart audio stream
+                if math.abs(average_drift) > 5.0 then
+                    state.logger.warn("RadioClient", "Large sync drift (" .. string.format("%.2f", average_drift) .. "s) - restarting audio stream")
+                    
+                    if state.player_handle then
+                        state.player_handle.close()
+                        state.player_handle = nil
+                    end
+                    
+                    -- Restart with corrected offset
+                    state.is_playing_audio = false
+                    state.needs_next_chunk = 1
+                    state.decoder = require("cc.audio.dfpwm").make_decoder()
+                end
+            else
+                state.logger.info("RadioClient", "Sync drift within acceptable range or inconsistent - no adjustment needed")
+            end
         end
     end
     
-    -- Gentle synchronization - only update if significantly different
+    -- Handle song changes (immediate action required)
     if data.now_playing and state.now_playing then
         if data.now_playing.id ~= state.now_playing.id then
             state.logger.info("RadioClient", "Song change detected via sync")
             state.now_playing = data.now_playing
             state.current_song_index = data.current_song_index or 1
             
-            -- Gently restart audio for new song
+            -- Reset sync tracking for new song
+            state.sync_samples = {}
+            state.sync_sample_count = 0
+            state.last_sync_adjustment = currentTime
+            
+            -- Stop current audio
             if state.player_handle then
                 state.player_handle.close()
                 state.player_handle = nil
             end
             
+            local speakers = state.speakerManager.getRawSpeakers()
+            for _, speaker in ipairs(speakers) do
+                speaker.stop()
+            end
+            
             -- Calculate sync offset for new song
-            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            local song_elapsed_time = adjusted_host_time - state.host_playback_start_time
             state.client_start_offset = math.max(0, song_elapsed_time)
             
             state.logger.info("RadioClient", "Song change sync: " .. state.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
             
-            -- Start streaming the new song with sync
-            radioClient.startSyncedAudio(state, state.client_start_offset)
+            -- For audio chunk streaming, just prepare to receive chunks
+            state.is_playing_audio = true
+            state.needs_next_chunk = 1
+            state.decoder = require("cc.audio.dfpwm").make_decoder()
         end
     elseif data.now_playing and not state.now_playing then
-        -- First time receiving song info - start playing with sync
+        -- First time receiving song info
         state.logger.info("RadioClient", "Received initial song info: " .. data.now_playing.name)
         state.now_playing = data.now_playing
         state.current_song_index = data.current_song_index or 1
         state.playing = data.playing or false
         
         if state.playing then
-            -- Calculate how far into the song we should be
-            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            -- Calculate initial sync offset
+            local song_elapsed_time = adjusted_host_time - state.host_playback_start_time
             state.client_start_offset = math.max(0, song_elapsed_time)
             
             state.logger.info("RadioClient", "Initial sync: " .. state.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
             
-            -- Start streaming the song with sync
-            radioClient.startSyncedAudio(state, state.client_start_offset)
+            -- For audio chunk streaming, prepare to receive chunks
+            state.is_playing_audio = true
+            state.needs_next_chunk = 1
+            state.decoder = require("cc.audio.dfpwm").make_decoder()
         end
     end
     
-    -- Update playback state gently
+    -- Handle playback state changes (immediate action required)
     if data.playing ~= state.playing then
         state.logger.info("RadioClient", "Playback state sync: " .. (data.playing and "playing" or "paused"))
         state.playing = data.playing
@@ -1471,13 +1596,16 @@ function radioClient.handleSyncStatus(state, data)
             end
             state.is_playing_audio = false
         elseif state.playing and state.now_playing and not state.is_playing_audio then
-            -- Resume - start audio with current sync offset
-            local song_elapsed_time = (currentTime - time_offset) - state.host_playback_start_time
+            -- Resume - calculate current sync offset
+            local song_elapsed_time = adjusted_host_time - state.host_playback_start_time
             state.client_start_offset = math.max(0, song_elapsed_time)
             
             state.logger.info("RadioClient", "Resume sync: " .. state.now_playing.name .. " at offset " .. string.format("%.2f", state.client_start_offset) .. "s")
             
-            radioClient.startSyncedAudio(state, state.client_start_offset)
+            -- For audio chunk streaming, prepare to receive chunks
+            state.is_playing_audio = true
+            state.needs_next_chunk = 1
+            state.decoder = require("cc.audio.dfpwm").make_decoder()
         end
     end
     
@@ -1490,7 +1618,7 @@ function radioClient.handleSyncStatus(state, data)
     -- Reset sync warnings since we got a good sync
     state.sync_warnings = 0
     
-    state.logger.info("RadioClient", "Sync completed - Session: " .. (state.current_playback_session or "none") .. ", Offset: " .. string.format("%.2f", state.client_start_offset or 0) .. "s")
+    state.logger.info("RadioClient", "Sync completed - Session: " .. (state.current_playback_session or "none") .. ", Samples: " .. #state.sync_samples .. "/" .. state.max_sync_samples)
 end
 
 -- NEW: Start audio with proper synchronization offset

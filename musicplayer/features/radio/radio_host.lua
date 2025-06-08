@@ -70,9 +70,9 @@ function radioHost.init(systemModules)
         -- Network state
         protocol_available = false,
         last_announce_time = 0,
-        announce_interval = 30, -- seconds
+        announce_interval = 60, -- seconds - reduced frequency
         last_sync_time = 0,
-        sync_interval = 10, -- seconds - sync every 10 seconds
+        sync_interval = 15, -- seconds - sync every 15 seconds instead of 10
         
         -- Playback synchronization
         current_playback_session = nil, -- Unique ID for current playback session
@@ -1951,7 +1951,7 @@ function radioHost.networkLoop(state)
             end
         end
         
-        sleep(0.1)
+        sleep(0.2)
     end
 end
 
