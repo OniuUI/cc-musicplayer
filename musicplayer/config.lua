@@ -11,7 +11,7 @@ config.initial_read_size = 4
 -- Logging Configuration
 config.logging = {
     -- Enable/disable saving logs to files (set to false to save disk space)
-    save_to_file = true,
+    save_to_file = false,
     
     -- Log level: "DEBUG", "INFO", "WARN", "ERROR", "FATAL"
     level = "INFO",
