@@ -142,69 +142,71 @@ end
 
 sleep(0.5)
 
--- Files to download - CLEANED UP to only include existing modular files
-local files = {
-	-- Core files
-	{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
-	{name = "uninstall.lua", url = baseUri .. "uninstall.lua", path = "uninstall.lua"},
-	{name = "upgrade.lua", url = baseUri .. "upgrade.lua", path = "upgrade.lua"},
-	
-	-- Configuration
-	{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
-	
-	-- Core system modules
-	{name = "system.lua", url = baseUri .. "musicplayer/core/system.lua", path = "musicplayer/core/system.lua"},
-	
-	-- UI modules
-	{name = "themes.lua", url = baseUri .. "musicplayer/ui/themes.lua", path = "musicplayer/ui/themes.lua"},
-	{name = "components.lua", url = baseUri .. "musicplayer/ui/components.lua", path = "musicplayer/ui/components.lua"},
-	{name = "radio.lua", url = baseUri .. "musicplayer/ui/layouts/radio.lua", path = "musicplayer/ui/layouts/radio.lua"},
-	
-	-- Audio modules
-	{name = "speaker_manager.lua", url = baseUri .. "musicplayer/audio/speaker_manager.lua", path = "musicplayer/audio/speaker_manager.lua"},
-	{name = "audio_processor.lua", url = baseUri .. "musicplayer/audio/audio_processor.lua", path = "musicplayer/audio/audio_processor.lua"},
-	
-	-- Network modules
-	{name = "http_client.lua", url = baseUri .. "musicplayer/network/http_client.lua", path = "musicplayer/network/http_client.lua"},
-	{name = "radio_protocol.lua", url = baseUri .. "musicplayer/network/radio_protocol.lua", path = "musicplayer/network/radio_protocol.lua"},
-	
-	-- Utilities
-	{name = "common.lua", url = baseUri .. "musicplayer/utils/common.lua", path = "musicplayer/utils/common.lua"},
-	
-	-- Middleware
-	{name = "error_handler.lua", url = baseUri .. "musicplayer/middleware/error_handler.lua", path = "musicplayer/middleware/error_handler.lua"},
-	
-	-- Feature modules
-	{name = "main_menu.lua", url = baseUri .. "musicplayer/features/menu/main_menu.lua", path = "musicplayer/features/menu/main_menu.lua"},
-	{name = "youtube_player.lua", url = baseUri .. "musicplayer/features/youtube/youtube_player.lua", path = "musicplayer/features/youtube/youtube_player.lua"},
-	{name = "radio_client.lua", url = baseUri .. "musicplayer/features/radio/radio_client.lua", path = "musicplayer/features/radio/radio_client.lua"},
-	{name = "radio_host.lua", url = baseUri .. "musicplayer/features/radio/radio_host.lua", path = "musicplayer/features/radio/radio_host.lua"},
-	
-	-- Application management
-	{name = "app_manager.lua", url = baseUri .. "musicplayer/app_manager.lua", path = "musicplayer/app_manager.lua"},
-	
-	-- Telemetry modules
-	{name = "telemetry.lua", url = baseUri .. "musicplayer/telemetry/telemetry.lua", path = "musicplayer/telemetry/telemetry.lua"},
-	{name = "logger.lua", url = baseUri .. "musicplayer/telemetry/logger.lua", path = "musicplayer/telemetry/logger.lua"},
-	{name = "system_detector.lua", url = baseUri .. "musicplayer/telemetry/system_detector.lua", path = "musicplayer/telemetry/system_detector.lua"},
-	
-	-- Configuration utilities
-	{name = "configure_logging.lua", url = baseUri .. "configure_logging.lua", path = "configure_logging.lua"},
-	{name = "configure_audio.lua", url = baseUri .. "configure_audio.lua", path = "configure_audio.lua"}
-}
+-- Complete file list for fresh install
+local function getFileList()
+	return {
+		-- Core files
+		{name = "startup.lua", url = baseUri .. "startup.lua", path = "startup.lua"},
+		{name = "version.txt", url = baseUri .. "version.txt", path = "version.txt"},
+		{name = "install.lua", url = baseUri .. "install.lua", path = "install.lua"},
+		{name = "uninstall.lua", url = baseUri .. "uninstall.lua", path = "uninstall.lua"},
+		{name = "upgrade.lua", url = baseUri .. "upgrade.lua", path = "upgrade.lua"},
+		
+		-- Configuration
+		{name = "config.lua", url = baseUri .. "musicplayer/config.lua", path = "musicplayer/config.lua"},
+		
+		-- Core system modules
+		{name = "system.lua", url = baseUri .. "musicplayer/core/system.lua", path = "musicplayer/core/system.lua"},
+		
+		-- UI modules
+		{name = "themes.lua", url = baseUri .. "musicplayer/ui/themes.lua", path = "musicplayer/ui/themes.lua"},
+		{name = "components.lua", url = baseUri .. "musicplayer/ui/components.lua", path = "musicplayer/ui/components.lua"},
+		{name = "main_layout.lua", url = baseUri .. "musicplayer/ui/layouts/main_layout.lua", path = "musicplayer/ui/layouts/main_layout.lua"},
+		
+		-- Audio modules
+		{name = "speaker_manager.lua", url = baseUri .. "musicplayer/audio/speaker_manager.lua", path = "musicplayer/audio/speaker_manager.lua"},
+		{name = "audio_processor.lua", url = baseUri .. "musicplayer/audio/audio_processor.lua", path = "musicplayer/audio/audio_processor.lua"},
+		{name = "buffer_manager.lua", url = baseUri .. "musicplayer/audio/buffer_manager.lua", path = "musicplayer/audio/buffer_manager.lua"},
+		
+		-- Network modules
+		{name = "http_client.lua", url = baseUri .. "musicplayer/network/http_client.lua", path = "musicplayer/network/http_client.lua"},
+		{name = "radio_protocol.lua", url = baseUri .. "musicplayer/network/radio_protocol.lua", path = "musicplayer/network/radio_protocol.lua"},
+		{name = "latency_manager.lua", url = baseUri .. "musicplayer/network/latency_manager.lua", path = "musicplayer/network/latency_manager.lua"},
+		
+		-- Utilities
+		{name = "file_utils.lua", url = baseUri .. "musicplayer/utils/file_utils.lua", path = "musicplayer/utils/file_utils.lua"},
+		
+		-- Middleware
+		{name = "error_handler.lua", url = baseUri .. "musicplayer/middleware/error_handler.lua", path = "musicplayer/middleware/error_handler.lua"},
+		
+		-- Feature modules
+		{name = "main_menu.lua", url = baseUri .. "musicplayer/features/menu/main_menu.lua", path = "musicplayer/features/menu/main_menu.lua"},
+		{name = "youtube_player.lua", url = baseUri .. "musicplayer/features/youtube/youtube_player.lua", path = "musicplayer/features/youtube/youtube_player.lua"},
+		{name = "radio_client.lua", url = baseUri .. "musicplayer/features/radio/radio_client.lua", path = "musicplayer/features/radio/radio_client.lua"},
+		{name = "radio_host.lua", url = baseUri .. "musicplayer/features/radio/radio_host.lua", path = "musicplayer/features/radio/radio_host.lua"},
+		
+		-- Telemetry modules
+		{name = "telemetry.lua", url = baseUri .. "musicplayer/telemetry/telemetry.lua", path = "musicplayer/telemetry/telemetry.lua"},
+		{name = "logger.lua", url = baseUri .. "musicplayer/telemetry/logger.lua", path = "musicplayer/telemetry/logger.lua"},
+		
+		-- Configuration utilities
+		{name = "configure_logging.lua", url = baseUri .. "configure_logging.lua", path = "configure_logging.lua"},
+		{name = "configure_audio.lua", url = baseUri .. "configure_audio.lua", path = "configure_audio.lua"}
+	}
+end
 
-colorPrint("Downloading " .. #files .. " files...", colors.cyan)
+colorPrint("Downloading " .. #getFileList() .. " files...", colors.cyan)
 sleep(0.3)
 
 -- Download each file with animated progress
-for i, file in ipairs(files) do
+for i, file in ipairs(getFileList()) do
 	term.setTextColor(colors.white)
 	term.write("Downloading " .. file.name .. "... ")
 	
 	-- Show progress bar
 	local x, y = term.getCursorPos()
 	term.setCursorPos(1, y + 1)
-	animatedProgress(i - 1, #files, colors.orange)
+	animatedProgress(i - 1, #getFileList(), colors.orange)
 	term.setCursorPos(x, y)
 	
 	local response = http.get(file.url)
@@ -235,7 +237,7 @@ end
 -- Final progress bar
 local _, currentY = term.getCursorPos()
 term.setCursorPos(1, currentY)
-animatedProgress(#files, #files, colors.lime)
+animatedProgress(#getFileList(), #getFileList(), colors.lime)
 print()
 
 -- Create version file

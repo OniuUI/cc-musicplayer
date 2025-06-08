@@ -1,7 +1,10 @@
 -- Radio Client feature for Bognesferga Radio
 -- Allows listening to network radio stations with synchronized streaming
+-- PRE-Buffer Synchronization System Implementation
 
 local radioProtocol = require("musicplayer/network/radio_protocol")
+local bufferManager = require("musicplayer/audio/buffer_manager")
+local config = require("musicplayer/config")
 
 local radioClient = {}
 
@@ -60,7 +63,29 @@ function radioClient.init(systemModules)
         size = 0,
         buffer = nil,
         
-        -- NEW: Simplified sync system focused on playback
+        -- PRE-BUFFER SYNCHRONIZATION SYSTEM
+        sync_buffer = nil,          -- Buffer manager instance for received chunks
+        buffer_ready = false,       -- Whether buffer is ready for synchronized playback
+        sync_enabled = true,        -- Enable/disable sync system
+        
+        -- Latency tracking
+        network_latency = 0,        -- Estimated network latency to host
+        latency_samples = {},       -- Store recent latency measurements
+        last_ping_sent = 0,         -- When we last sent a ping
+        ping_sequence = 0,          -- Ping sequence counter
+        
+        -- Sync coordination
+        current_sync_session = nil, -- Current sync session from host
+        sync_timestamp = 0,         -- When we should start playing
+        sync_delay = 0,             -- How long to delay before playing
+        sync_ready = false,         -- Whether we're ready for sync playback
+        
+        -- Buffer management
+        buffer_health = 0,          -- Buffer health percentage
+        buffered_duration = 0,      -- How much audio is buffered
+        last_buffer_update = 0,     -- When we last updated buffer status
+        
+        -- Legacy sync system (fallback)
         current_playback_session = nil, -- Track current session from host
         last_sync_time = 0,
         sync_timeout = 60, -- seconds - only for detecting truly dead hosts
@@ -70,8 +95,6 @@ function radioClient.init(systemModules)
         host_song_start_time = 0, -- When host started playing current song
         song_duration = 0, -- Total length of current song in seconds
         last_timeline_update = 0, -- When we last got timeline info from host
-        network_latency = 0, -- Estimated network latency to host
-        latency_samples = {}, -- Store recent latency measurements
         
         -- Time-based sync system - NEVER STOPS MUSIC
         sync_drift_samples = {}, -- Store recent drift measurements
@@ -103,6 +126,14 @@ function radioClient.init(systemModules)
         state.logger.warn("RadioClient", "No wireless modem found - radio client disabled")
     else
         state.logger.info("RadioClient", "Radio protocol initialized for client")
+    end
+    
+    -- Initialize PRE-buffer system
+    if state.protocol_available then
+        state.sync_buffer = bufferManager.createBuffer(state.logger)
+        
+        state.logger.info("RadioClient", string.format("PRE-buffer system initialized (%.1fs buffer, %.1fs chunks)", 
+            config.radio_sync.buffer_duration, config.radio_sync.chunk_duration))
     end
     
     return state
@@ -1261,7 +1292,7 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
     os.queueEvent("audio_update")
 end
 
--- NETWORK LOOP (radio communication) - SIMPLIFIED SYNC
+-- NETWORK LOOP (radio communication) - PRE-BUFFER SYNC
 function radioClient.networkLoop(state)
     while true do
         local currentTime = os.epoch("utc") / 1000
@@ -1287,6 +1318,28 @@ function radioClient.networkLoop(state)
             end
         end
         
+        -- PRE-BUFFER: Update buffer status
+        if state.sync_buffer and state.connected then
+            local bufferStatus = bufferManager.getBufferStatus(state.sync_buffer)
+            if bufferStatus then
+                state.buffer_health = bufferStatus.buffer_health
+                state.buffer_ready = bufferStatus.buffer_ready
+                state.buffered_duration = bufferStatus.buffered_duration
+                
+                -- Send buffer ready notification to host
+                if state.buffer_ready and not state.sync_ready then
+                    radioClient.sendBufferReadyNotification(state)
+                    state.sync_ready = true
+                end
+                
+                -- Clean up old chunks periodically
+                if (currentTime - state.last_buffer_update) >= 30 then -- Every 30 seconds
+                    bufferManager.cleanupOldChunks(state.sync_buffer, 60)
+                    state.last_buffer_update = currentTime
+                end
+            end
+        end
+        
         -- Send periodic ping to host (keep-alive)
         if state.connected and (currentTime - state.last_ping_time) >= state.ping_interval then
             radioClient.sendPing(state)
@@ -1308,16 +1361,28 @@ function radioClient.networkLoop(state)
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
         if message and type(message) == "table" then
-            state.logger.info("RadioClient", "Received message on channel " .. channel .. " (reply: " .. replyChannel .. ") from distance " .. (distance or "unknown"))
+            state.logger.debug("RadioClient", "Received message on channel " .. channel .. " (reply: " .. replyChannel .. ") from distance " .. (distance or "unknown"))
             
             if radioProtocol.isValidMessage(message) then
                 local data = radioProtocol.extractMessageData(message)
                 if data then
-                    state.logger.info("RadioClient", "Valid message type: " .. (data.type or "unknown") .. " from station " .. (data.station_id or "unknown"))
+                    state.logger.debug("RadioClient", "Valid message type: " .. (data.type or "unknown") .. " from station " .. (data.station_id or "unknown"))
                     
+                    -- PRE-BUFFER: Handle ping requests from host
+                    if data.type == "ping_request" and state.connected then
+                        radioClient.handlePingRequest(state, data, replyChannel)
+                        
+                    -- PRE-BUFFER: Handle buffer chunks from host
+                    elseif data.type == "buffer_chunk" and state.connected and state.sync_buffer then
+                        radioClient.handleBufferChunk(state, data)
+                        
+                    -- PRE-BUFFER: Handle sync commands from host
+                    elseif data.type == "sync_command" and state.connected then
+                        radioClient.handleSyncCommand(state, data)
+                        
                     -- Debug connection process
-                    if state.connection_status == "connecting" and state.connecting_to_station then
-                        state.logger.info("RadioClient", "Currently connecting to station " .. state.connecting_to_station.station_id .. ", received message from station " .. (data.station_id or "unknown"))
+                    elseif state.connection_status == "connecting" and state.connecting_to_station then
+                        state.logger.debug("RadioClient", "Currently connecting to station " .. state.connecting_to_station.station_id .. ", received message from station " .. (data.station_id or "unknown"))
                     end
                 end
                 
@@ -1364,7 +1429,7 @@ function radioClient.networkLoop(state)
                     local clientId = os.getComputerID()
                     local clientChannel = radioProtocol.getClientChannel(clientId)
                     
-                    state.logger.info("RadioClient", "Checking for join response - our channel: " .. clientChannel .. ", message channel: " .. channel)
+                    state.logger.debug("RadioClient", "Checking for join response - our channel: " .. clientChannel .. ", message channel: " .. channel)
                     
                     if channel == clientChannel and data and data.type == "join_response" then
                         state.logger.info("RadioClient", "Join response received! Success: " .. tostring(data.success))
@@ -1384,6 +1449,14 @@ function radioClient.networkLoop(state)
                             state.connected_station = state.connecting_to_station
                             state.connecting_to_station = nil
                             state.last_sync_time = currentTime
+                            
+                            -- Initialize PRE-buffer for this connection
+                            if state.sync_buffer then
+                                bufferManager.resetBuffer(state.sync_buffer, nil, 0)
+                                state.buffer_ready = false
+                                state.sync_ready = false
+                                state.logger.info("RadioClient", "PRE-buffer initialized for connection")
+                            end
                             
                             -- Update state from host response
                             if data.now_playing then
@@ -2001,6 +2074,280 @@ function radioClient.startAudioAtPosition(state, startPosition)
     term.setTextColor(colors.cyan)
     print("🎵 AUDIO REQUEST: " .. state.now_playing.name .. " at " .. string.format("%.1f", startPosition) .. "s")
     term.setTextColor(colors.white)
+end
+
+-- PRE-BUFFER SYNCHRONIZATION FUNCTIONS
+
+-- Handle ping request from host for latency measurement
+function radioClient.handlePingRequest(state, data, replyChannel)
+    if not data.sequence or not data.timestamp then
+        return
+    end
+    
+    local currentTime = os.epoch("utc")
+    local clientId = os.getComputerID()
+    
+    -- Send ping response
+    local response = radioProtocol.sendPingResponse(clientId, data.sequence, currentTime)
+    
+    if response then
+        state.logger.debug("RadioClient", string.format("Ping response sent (seq=%d)", data.sequence))
+    end
+end
+
+-- Handle buffer chunk from host
+function radioClient.handleBufferChunk(state, data)
+    if not state.sync_buffer or not data.chunk_id or not data.audio_data then
+        return
+    end
+    
+    -- Verify chunk belongs to current song
+    if data.song_id and state.now_playing then
+        local currentSongId = state.now_playing.id or state.now_playing.name
+        if data.song_id ~= currentSongId then
+            state.logger.debug("RadioClient", string.format("Ignoring chunk for different song: %s (current: %s)", 
+                data.song_id, currentSongId))
+            return
+        end
+    end
+    
+    -- Add chunk to buffer
+    local success = bufferManager.addChunk(state.sync_buffer, data.audio_data, data.buffer_position)
+    
+    if success then
+        state.logger.debug("RadioClient", string.format("Buffered chunk %s (%.1fs, %d bytes)", 
+            data.chunk_id, data.buffer_position, #data.audio_data))
+        
+        -- Update buffer status
+        local bufferStatus = bufferManager.getBufferStatus(state.sync_buffer)
+        if bufferStatus then
+            state.buffer_health = bufferStatus.buffer_health
+            state.buffered_duration = bufferStatus.buffered_duration
+        end
+    else
+        state.logger.warn("RadioClient", string.format("Failed to buffer chunk %s", data.chunk_id))
+    end
+end
+
+-- Handle sync command from host
+function radioClient.handleSyncCommand(state, data)
+    if not data.sync_timestamp or not data.session_id then
+        state.logger.warn("RadioClient", "Invalid sync command received")
+        return
+    end
+    
+    local currentTime = os.epoch("utc")
+    
+    -- Update sync session
+    state.current_sync_session = data.session_id
+    state.sync_timestamp = data.sync_timestamp
+    
+    -- Calculate sync delay with latency compensation
+    local syncDelay = (data.sync_timestamp - currentTime) / 1000 -- Convert to seconds
+    syncDelay = syncDelay - state.network_latency -- Compensate for network latency
+    
+    state.sync_delay = math.max(0, syncDelay)
+    
+    state.logger.info("RadioClient", string.format("Sync command received: session=%s, delay=%.3fs, target_pos=%.1fs", 
+        data.session_id, state.sync_delay, data.target_position or 0))
+    
+    -- If we have enough buffer and sync delay is reasonable, prepare for synchronized playback
+    if state.buffer_ready and state.sync_delay < config.radio_sync.max_sync_delay then
+        radioClient.prepareSynchronizedPlayback(state, data)
+    else
+        -- Fall back to immediate playback or request emergency resync
+        if not state.buffer_ready then
+            state.logger.warn("RadioClient", "Buffer not ready for sync - requesting emergency resync")
+            radioClient.requestEmergencyResync(state, "Buffer not ready")
+        else
+            state.logger.warn("RadioClient", "Sync delay too large - requesting emergency resync")
+            radioClient.requestEmergencyResync(state, "Sync delay too large")
+        end
+    end
+end
+
+-- Prepare for synchronized playback
+function radioClient.prepareSynchronizedPlayback(state, syncData)
+    if not state.sync_buffer then
+        return false
+    end
+    
+    -- Set target playback position
+    state.target_song_position = syncData.target_position or 0
+    
+    -- Schedule synchronized start
+    local startTime = os.epoch("utc") / 1000 + state.sync_delay
+    
+    -- Use timer to start playback at exact time
+    os.startTimer(state.sync_delay)
+    
+    state.logger.info("RadioClient", string.format("Synchronized playback scheduled in %.3fs at position %.1fs", 
+        state.sync_delay, state.target_song_position))
+    
+    -- CLEAR SYNC LOG
+    term.setTextColor(colors.cyan)
+    print(string.format("🔄 SYNC SCHEDULED: %.3fs delay, position %.1fs", state.sync_delay, state.target_song_position))
+    term.setTextColor(colors.white)
+    
+    return true
+end
+
+-- Start synchronized playback from buffer
+function radioClient.startSynchronizedPlayback(state)
+    if not state.sync_buffer or not state.buffer_ready then
+        return false
+    end
+    
+    -- Stop any existing playback
+    if state.player_handle then
+        state.player_handle.close()
+        state.player_handle = nil
+    end
+    
+    local speakers = state.speakerManager.getRawSpeakers()
+    for _, speaker in ipairs(speakers) do
+        speaker.stop()
+    end
+    
+    -- Start playing from buffer at target position
+    local chunk = bufferManager.getChunkAtPosition(state.sync_buffer, state.target_song_position)
+    
+    if chunk and chunk.audio_data then
+        -- Play the chunk
+        for _, speaker in ipairs(speakers) do
+            if speaker and speaker.playAudio then
+                speaker.playAudio(chunk.audio_data)
+            end
+        end
+        
+        state.is_playing_audio = true
+        state.song_start_time = os.epoch("utc") / 1000
+        state.actual_song_position = state.target_song_position
+        
+        state.logger.info("RadioClient", string.format("Synchronized playback started at position %.1fs", 
+            state.target_song_position))
+        
+        -- CLEAR SYNC START LOG
+        term.setTextColor(colors.lime)
+        print(string.format("🎵 SYNC PLAYBACK: Started at %.1fs", state.target_song_position))
+        term.setTextColor(colors.white)
+        
+        return true
+    else
+        state.logger.error("RadioClient", "No audio chunk available at target position")
+        radioClient.requestEmergencyResync(state, "No audio chunk available")
+        return false
+    end
+end
+
+-- Send buffer ready notification to host
+function radioClient.sendBufferReadyNotification(state)
+    if not state.connected_station_id or not state.sync_buffer then
+        return false
+    end
+    
+    local bufferStatus = bufferManager.getBufferStatus(state.sync_buffer)
+    if not bufferStatus then
+        return false
+    end
+    
+    local clientId = os.getComputerID()
+    local success = radioProtocol.sendClientBufferReady(clientId, bufferStatus.buffered_duration)
+    
+    if success then
+        state.logger.info("RadioClient", string.format("Buffer ready notification sent (%.1fs buffered)", 
+            bufferStatus.buffered_duration))
+    end
+    
+    return success
+end
+
+-- Request emergency resync from host
+function radioClient.requestEmergencyResync(state, reason)
+    if not state.connected_station_id then
+        return false
+    end
+    
+    local clientId = os.getComputerID()
+    local success = radioProtocol.sendEmergencyResync(clientId, reason)
+    
+    if success then
+        state.logger.warn("RadioClient", string.format("Emergency resync requested: %s", reason))
+        
+        -- CLEAR EMERGENCY LOG
+        term.setTextColor(colors.red)
+        print(string.format("🚨 EMERGENCY RESYNC: %s", reason))
+        term.setTextColor(colors.white)
+    end
+    
+    return success
+end
+
+-- Enhanced audio loop with PRE-buffer support
+function radioClient.enhancedAudioLoop(state, speakers)
+    while true do
+        local currentTime = os.epoch("utc") / 1000
+        
+        -- Handle synchronized playback from buffer
+        if state.sync_buffer and state.buffer_ready and state.is_playing_audio then
+            local playbackPosition = currentTime - state.song_start_time + state.actual_song_position
+            
+            -- Get next chunk from buffer
+            local chunk = bufferManager.getChunkAtPosition(state.sync_buffer, playbackPosition)
+            
+            if chunk and chunk.audio_data then
+                -- Play the chunk
+                for _, speaker in ipairs(speakers) do
+                    if speaker and speaker.playAudio then
+                        speaker.playAudio(chunk.audio_data)
+                    end
+                end
+                
+                -- Advance position
+                state.actual_song_position = playbackPosition + config.radio_sync.chunk_duration
+                
+                state.logger.debug("RadioClient", string.format("Played buffer chunk at position %.1fs", playbackPosition))
+            else
+                -- No chunk available - request emergency resync
+                state.logger.warn("RadioClient", "Buffer underrun - requesting emergency resync")
+                radioClient.requestEmergencyResync(state, "Buffer underrun")
+                state.is_playing_audio = false
+            end
+        end
+        
+        -- Handle timer events for synchronized start
+        local event = {os.pullEvent("timer")}
+        if event[1] == "timer" and state.sync_delay > 0 then
+            -- Time to start synchronized playback
+            radioClient.startSynchronizedPlayback(state)
+            state.sync_delay = 0
+        end
+        
+        sleep(0.05) -- 50ms for smooth playback
+    end
+end
+
+-- Get PRE-buffer system status for UI display
+function radioClient.getBufferSystemStatus(state)
+    if not state.sync_buffer then
+        return {
+            enabled = false,
+            status = "Disabled"
+        }
+    end
+    
+    local bufferStatus = bufferManager.getBufferStatus(state.sync_buffer)
+    
+    return {
+        enabled = state.sync_enabled,
+        status = state.buffer_ready and "Ready" or "Buffering",
+        buffer_health = state.buffer_health,
+        buffered_duration = state.buffered_duration,
+        active_chunks = bufferStatus and bufferStatus.active_chunks or 0,
+        network_latency = state.network_latency * 1000, -- Convert to ms
+        sync_session = state.current_sync_session,
+        sync_ready = state.sync_ready
+    }
 end
 
 return radioClient 

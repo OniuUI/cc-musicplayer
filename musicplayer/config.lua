@@ -94,4 +94,27 @@ config.audio = {
     dynamic_range = true       -- Preserve dynamic range in audio processing
 }
 
+-- Radio Synchronization Configuration (PRE-Buffer System)
+config.radio_sync = {
+    -- Buffer settings
+    buffer_duration = 45,        -- Seconds of audio to buffer
+    chunk_duration = 0.5,        -- Duration of each audio chunk
+    safety_margin = 5,           -- Extra buffer time for safety
+    
+    -- Latency management
+    max_client_latency = 2000,   -- Max allowed latency (ms)
+    latency_samples = 10,        -- Number of samples for average
+    ping_interval = 5,           -- Seconds between latency measurements
+    
+    -- Sync behavior
+    sync_tolerance = 100,        -- Acceptable drift (ms)
+    resync_threshold = 500,      -- Force resync if drift exceeds this
+    slow_client_timeout = 30,    -- Remove clients that can't keep up
+    
+    -- Performance
+    enable_compression = true,   -- Compress audio chunks
+    adaptive_quality = true,     -- Reduce quality for slow clients
+    predictive_buffering = true  -- Pre-load next song
+}
+
 return config 

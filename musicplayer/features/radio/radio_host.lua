@@ -1,9 +1,13 @@
 -- Radio Host feature for Bognesferga Radio
 -- Enhanced with YouTube search integration and synchronized streaming
+-- PRE-Buffer Synchronization System Implementation
 
 local radioProtocol = require("musicplayer/network/radio_protocol")
 local components = require("musicplayer.ui.components")
 local themes = require("musicplayer.ui.themes")
+local bufferManager = require("musicplayer/audio/buffer_manager")
+local latencyManager = require("musicplayer/network/latency_manager")
+local config = require("musicplayer/config")
 
 local radioHost = {}
 
@@ -78,6 +82,28 @@ function radioHost.init(systemModules)
         current_playback_session = nil, -- Unique ID for current playback session
         playback_start_time = 0, -- When current song started playing
         
+        -- Song position tracking (like radio client)
+        song_start_time = 0, -- When we started playing current song locally
+        song_duration = 0, -- Total length of current song in seconds (estimated)
+        current_song_position = 0, -- Current position in the song
+        last_position_update = 0, -- When we last updated position
+        
+        -- PRE-BUFFER SYNCHRONIZATION SYSTEM
+        audio_buffer = nil,        -- Buffer manager instance
+        latency_tracker = nil,     -- Latency tracker instance
+        buffer_ready = false,      -- Whether buffer is ready for synchronized playback
+        sync_enabled = true,       -- Enable/disable sync system
+        
+        -- Buffer management
+        buffer_fill_rate = 0,      -- How fast we're filling the buffer
+        buffer_health = 100,       -- Buffer health percentage
+        last_buffer_update = 0,    -- When we last updated buffer
+        
+        -- Sync coordination
+        sync_session_id = nil,     -- Current sync session ID
+        next_sync_timestamp = 0,   -- When next sync should happen
+        sync_in_progress = false,  -- Whether we're currently syncing
+        
         -- API configuration
         api_base_url = "https://ipod-2to6magyna-uc.a.run.app/",
         version = "2.1"
@@ -92,6 +118,15 @@ function radioHost.init(systemModules)
         -- Open broadcast channel immediately to listen for discovery requests
         radioProtocol.openBroadcastChannel()
         state.logger.info("RadioHost", "Opened broadcast channel for discovery requests")
+    end
+    
+    -- Initialize PRE-buffer system
+    if state.protocol_available then
+        state.audio_buffer = bufferManager.createBuffer(state.logger)
+        state.latency_tracker = latencyManager.createTracker(state.logger)
+        
+        state.logger.info("RadioHost", string.format("PRE-buffer system initialized (%.1fs buffer, %.1fs chunks)", 
+            config.radio_sync.buffer_duration, config.radio_sync.chunk_duration))
     end
     
     return state
@@ -702,6 +737,11 @@ end
 function radioHost.broadcastSyncStatus(state)
     local currentTime = os.epoch("utc") / 1000
     
+    -- Update current song position if playing
+    if state.playing and state.song_start_time > 0 then
+        state.current_song_position = currentTime - state.song_start_time
+    end
+    
     local syncMessage = {
         type = "sync_status",
         station_id = os.getComputerID(),
@@ -715,6 +755,11 @@ function radioHost.broadcastSyncStatus(state)
         playback_session = state.current_playback_session,
         playback_start_time = state.playback_start_time,
         server_time = currentTime,
+        
+        -- Song position data for timeline display
+        song_start_time = state.song_start_time,
+        song_duration = state.song_duration,
+        current_song_position = state.current_song_position,
         
         -- Playlist info
         playlist_size = #state.playlist,
@@ -1257,6 +1302,63 @@ function radioHost.drawNowPlaying(state)
             term.setCursorPos(3, 8)
             term.write("⏸ Paused")
         end
+        
+        -- Song time/position display
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.yellow)
+        term.setCursorPos(3, 9)
+        term.write("Song Position:")
+        
+        -- Update current position if playing
+        if state.playing and state.song_start_time > 0 then
+            local currentTime = os.epoch("utc") / 1000
+            state.current_song_position = currentTime - state.song_start_time
+        end
+        
+        -- Format time as MM:SS
+        local function formatTime(seconds)
+            local mins = math.floor(seconds / 60)
+            local secs = math.floor(seconds % 60)
+            return string.format("%d:%02d", mins, secs)
+        end
+        
+        term.setTextColor(colors.white)
+        term.setCursorPos(3, 10)
+        if state.song_duration > 0 then
+            term.write(formatTime(state.current_song_position) .. " / " .. formatTime(state.song_duration))
+        else
+            term.write(formatTime(state.current_song_position) .. " / --:--")
+        end
+        
+        -- Progress bar
+        if state.song_duration > 0 then
+            term.setCursorPos(3, 11)
+            local progressWidth = 30
+            local progress = math.min(1.0, state.current_song_position / state.song_duration)
+            local fillWidth = math.floor(progress * progressWidth)
+            
+            term.setBackgroundColor(colors.gray)
+            term.setTextColor(colors.white)
+            term.write("[")
+            
+            for i = 1, progressWidth do
+                if i <= fillWidth then
+                    term.setBackgroundColor(colors.lime)
+                    term.write(" ")
+                else
+                    term.setBackgroundColor(colors.gray)
+                    term.write(" ")
+                end
+            end
+            
+            term.setBackgroundColor(colors.gray)
+            term.write("]")
+            
+            -- Show percentage
+            term.setBackgroundColor(colors.black)
+            term.setTextColor(colors.lightGray)
+            term.write(" " .. math.floor(progress * 100) .. "%")
+        end
     else
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.lightGray)
@@ -1266,9 +1368,9 @@ function radioHost.drawNowPlaying(state)
         term.write("  Add songs to playlist and start broadcast")
     end
     
-    -- Volume control (like YouTube player)
+    -- Volume control (like YouTube player) - moved down to accommodate song position
     term.setTextColor(colors.yellow)
-    term.setCursorPos(3, 10)
+    term.setCursorPos(3, 13)
     if state.muted then
         term.write("Volume: MUTED")
     else
@@ -1277,7 +1379,7 @@ function radioHost.drawNowPlaying(state)
     end
     
     -- Volume slider
-    term.setCursorPos(3, 11)
+    term.setCursorPos(3, 14)
     local sliderWidth = 20
     local fillWidth = state.muted and 0 or math.floor((state.volume / 3.0) * sliderWidth)
     
@@ -1299,7 +1401,7 @@ function radioHost.drawNowPlaying(state)
     term.write("]")
     
     -- Mute/Unmute button
-    term.setCursorPos(25, 11)
+    term.setCursorPos(25, 14)
     if state.muted then
         term.setBackgroundColor(colors.red)
         term.setTextColor(colors.white)
@@ -1310,8 +1412,8 @@ function radioHost.drawNowPlaying(state)
         term.write(" 🔊 Mute ")
     end
     
-    -- Playback controls with beautiful styling
-    local controlY = 13
+    -- Playback controls with beautiful styling - moved down
+    local controlY = 16
     
     if state.now_playing then
         -- Play/Pause button
@@ -1340,9 +1442,9 @@ function radioHost.drawNowPlaying(state)
         term.write(" ⏮ Prev ")
     end
     
-    -- Loop mode control
+    -- Loop mode control - moved down
     term.setTextColor(colors.yellow)
-    term.setCursorPos(3, 15)
+    term.setCursorPos(3, 18)
     term.write("Loop Mode: ")
     
     local loopModes = {"Off", "Playlist", "Song"}
@@ -1357,25 +1459,25 @@ function radioHost.drawNowPlaying(state)
             term.setTextColor(colors.lightGray)
         end
         
-        term.setCursorPos(3 + (i - 1) * 10, 16)
+        term.setCursorPos(3 + (i - 1) * 10, 19)
         term.write(" " .. loopModes[i] .. " ")
     end
     
-    -- Broadcasting info
+    -- Broadcasting info - moved down
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.yellow)
-    term.setCursorPos(3, 18)
+    term.setCursorPos(3, 21)
     term.write("Broadcasting Status:")
     
     if state.is_broadcasting then
         term.setTextColor(colors.lime)
-        term.setCursorPos(3, 19)
+        term.setCursorPos(3, 22)
         term.write("🔴 LIVE to " .. #state.listeners .. " listeners")
         
         -- Listener list
         if #state.listeners > 0 then
             term.setTextColor(colors.cyan)
-            term.setCursorPos(3, 20)
+            term.setCursorPos(3, 23)
             term.write("👥 Listeners: ")
             
             local listenerText = ""
@@ -1392,7 +1494,7 @@ function radioHost.drawNowPlaying(state)
         end
     else
         term.setTextColor(colors.red)
-        term.setCursorPos(3, 19)
+        term.setCursorPos(3, 22)
         term.write("⚫ Not broadcasting")
     end
 end
@@ -1639,8 +1741,8 @@ function radioHost.handlePlaylistClicks(state, x, y)
 end
 
 function radioHost.handleNowPlayingClicks(state, x, y, speakers)
-    -- Volume slider click
-    if y == 11 and x >= 4 and x <= 24 and not state.muted then
+    -- Volume slider click - moved down by 3 lines
+    if y == 14 and x >= 4 and x <= 24 and not state.muted then
         local sliderPos = x - 4
         local newVolume = (sliderPos / 20) * 3.0
         state.volume = math.max(0, math.min(3.0, newVolume))
@@ -1648,15 +1750,15 @@ function radioHost.handleNowPlayingClicks(state, x, y, speakers)
         return
     end
     
-    -- Mute/Unmute button
-    if y == 11 and x >= 25 and x <= 36 then
+    -- Mute/Unmute button - moved down by 3 lines
+    if y == 14 and x >= 25 and x <= 36 then
         state.muted = not state.muted
         state.logger.info("RadioHost", "Audio " .. (state.muted and "muted" or "unmuted"))
         return
     end
     
-    -- Playback control buttons
-    if y == 13 and state.now_playing then
+    -- Playback control buttons - moved down by 3 lines
+    if y == 16 and state.now_playing then
         if x >= 3 and x <= 12 then -- Play/Pause
             radioHost.togglePlayback(state, speakers)
         elseif x >= 14 and x <= 22 then -- Next
@@ -1666,8 +1768,8 @@ function radioHost.handleNowPlayingClicks(state, x, y, speakers)
         end
     end
     
-    -- Loop mode buttons
-    if y == 16 then
+    -- Loop mode buttons - moved down by 3 lines
+    if y == 19 then
         if x >= 3 and x <= 7 then -- Off
             state.looping = 0
         elseif x >= 13 and x <= 21 then -- Playlist
@@ -1917,31 +2019,86 @@ function radioHost.networkLoop(state)
             state.last_announce_time = currentTime
         end
         
-        -- NEW: Send sync status periodically to keep clients synchronized
+        -- PRE-BUFFER: Send latency pings to all clients
+        if state.is_broadcasting and state.sync_enabled and state.latency_tracker then
+            latencyManager.sendPingToAll(state.latency_tracker, radioProtocol)
+            latencyManager.cleanupTimeoutClients(state.latency_tracker)
+            latencyManager.cleanupPendingPings(state.latency_tracker)
+        end
+        
+        -- PRE-BUFFER: Send sync commands based on latency measurements
         if state.is_broadcasting and #state.listeners > 0 and (currentTime - state.last_sync_time) >= state.sync_interval then
-            radioHost.broadcastSyncStatus(state)
+            if state.sync_enabled and state.latency_tracker then
+                radioHost.sendSyncCommand(state)
+            else
+                -- Fallback to old sync system
+                radioHost.broadcastSyncStatus(state)
+            end
             state.last_sync_time = currentTime
+        end
+        
+        -- PRE-BUFFER: Update buffer status
+        if state.audio_buffer and state.is_broadcasting then
+            local bufferStatus = bufferManager.getBufferStatus(state.audio_buffer)
+            if bufferStatus then
+                state.buffer_health = bufferStatus.buffer_health
+                state.buffer_ready = bufferStatus.buffer_ready
+                
+                -- Clean up old chunks periodically
+                if (currentTime - state.last_buffer_update) >= 30 then -- Every 30 seconds
+                    bufferManager.cleanupOldChunks(state.audio_buffer, 60)
+                    state.last_buffer_update = currentTime
+                end
+            end
         end
         
         -- Handle incoming network messages
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         
         if message and type(message) == "table" then
-            state.logger.info("RadioHost", "Received message on channel " .. channel .. " (reply: " .. replyChannel .. ") from distance " .. (distance or "unknown"))
+            state.logger.debug("RadioHost", "Received message on channel " .. channel .. " (reply: " .. replyChannel .. ") from distance " .. (distance or "unknown"))
             
             if radioProtocol.isValidMessage(message) then
                 local data = radioProtocol.extractMessageData(message)
                 if data then
-                    state.logger.info("RadioHost", "Valid message type: " .. (data.type or "unknown") .. " from client " .. (data.client_id or data.listener_id or "unknown"))
+                    state.logger.debug("RadioHost", "Valid message type: " .. (data.type or "unknown") .. " from client " .. (data.client_id or data.listener_id or "unknown"))
                     
+                    -- PRE-BUFFER: Handle ping responses
+                    if data.type == "ping_response" and state.latency_tracker then
+                        local clientId = data.client_id or replyChannel
+                        latencyManager.processPingResponse(state.latency_tracker, data, clientId)
+                        
+                    -- PRE-BUFFER: Handle client buffer ready notifications
+                    elseif data.type == "client_buffer_ready" and state.latency_tracker then
+                        local clientId = data.client_id
+                        latencyManager.addClient(state.latency_tracker, clientId)
+                        state.logger.info("RadioHost", string.format("Client %d buffer ready (%.1fs buffered)", 
+                            clientId, data.buffer_duration or 0))
+                        
+                    -- PRE-BUFFER: Handle emergency resync requests
+                    elseif data.type == "emergency_resync" then
+                        local clientId = data.client_id
+                        local reason = data.reason or "Unknown"
+                        state.logger.warn("RadioHost", string.format("Emergency resync requested by client %d: %s", 
+                            clientId, reason))
+                        
+                        -- Force immediate sync
+                        if state.sync_enabled and state.latency_tracker then
+                            radioHost.sendSyncCommand(state, true) -- Force sync
+                        end
+                        
                     -- Debug join requests specifically
-                    if data.type == "join_request" then
+                    elseif data.type == "join_request" then
                         state.logger.info("RadioHost", "JOIN REQUEST received from Computer-" .. (data.listener_id or "unknown") .. " - Broadcasting: " .. tostring(state.is_broadcasting))
-                    end
-                    
+                        
+                        -- Add client to latency tracker when they join
+                        if state.latency_tracker and data.listener_id then
+                            latencyManager.addClient(state.latency_tracker, data.listener_id)
+                        end
+                        
                     -- Handle discovery requests even when not broadcasting (for debugging)
-                    if data.type == "discovery_request" then
-                        state.logger.info("RadioHost", "Discovery request received - Broadcasting: " .. tostring(state.is_broadcasting))
+                    elseif data.type == "discovery_request" then
+                        state.logger.debug("RadioHost", "Discovery request received - Broadcasting: " .. tostring(state.is_broadcasting))
                     end
                 end
                 
@@ -1964,6 +2121,10 @@ function radioHost.togglePlayback(state, speakers)
             -- Generate new playback session when starting
             state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
             state.playback_start_time = os.epoch("utc") / 1000
+            -- Reset song position tracking
+            state.song_start_time = os.epoch("utc") / 1000
+            state.current_song_position = 0
+            state.song_duration = 0 -- Will be estimated during playback
             state.needs_next_chunk = 1
             os.queueEvent("audio_update")
         elseif not state.playing then
@@ -1989,6 +2150,10 @@ function radioHost.togglePlayback(state, speakers)
         state.playing = true
         state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
         state.playback_start_time = os.epoch("utc") / 1000
+        -- Reset song position tracking
+        state.song_start_time = os.epoch("utc") / 1000
+        state.current_song_position = 0
+        state.song_duration = 0 -- Will be estimated during playback
         state.needs_next_chunk = 1
         state.decoder = require("cc.audio.dfpwm").make_decoder()
         state.logger.info("RadioHost", "Started playing: " .. state.now_playing.name .. " - Session: " .. state.current_playback_session)
@@ -2022,6 +2187,10 @@ function radioHost.nextSong(state, speakers)
     -- Clear playback session to prevent overlapping
     state.current_playback_session = nil
     state.playback_start_time = 0
+    -- Reset song position tracking
+    state.song_start_time = 0
+    state.current_song_position = 0
+    state.song_duration = 0
     
     -- Move to next song
     if state.looping == 2 then -- Song loop
@@ -2037,6 +2206,10 @@ function radioHost.nextSong(state, speakers)
         state.current_song_index = 0
         state.current_playback_session = nil
         state.playback_start_time = 0
+        -- Reset song position tracking
+        state.song_start_time = 0
+        state.current_song_position = 0
+        state.song_duration = 0
         
         if state.is_broadcasting then
             radioHost.broadcastPlaybackState(state)
@@ -2049,6 +2222,10 @@ function radioHost.nextSong(state, speakers)
     state.now_playing = state.playlist[state.current_song_index]
     state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
     state.playback_start_time = os.epoch("utc") / 1000
+    -- Reset song position tracking for new song
+    state.song_start_time = os.epoch("utc") / 1000
+    state.current_song_position = 0
+    state.song_duration = 0 -- Will be estimated during playback
     state.needs_next_chunk = 1
     state.decoder = require("cc.audio.dfpwm").make_decoder()
     state.playing_id = nil -- Reset to trigger new download
@@ -2084,6 +2261,10 @@ function radioHost.previousSong(state, speakers)
     -- Clear playback session to prevent overlapping
     state.current_playback_session = nil
     state.playback_start_time = 0
+    -- Reset song position tracking
+    state.song_start_time = 0
+    state.current_song_position = 0
+    state.song_duration = 0
     
     -- Move to previous song
     if state.current_song_index > 1 then
@@ -2099,6 +2280,10 @@ function radioHost.previousSong(state, speakers)
     state.now_playing = state.playlist[state.current_song_index]
     state.current_playback_session = os.getComputerID() .. "_" .. os.epoch("utc")
     state.playback_start_time = os.epoch("utc") / 1000
+    -- Reset song position tracking for new song
+    state.song_start_time = os.epoch("utc") / 1000
+    state.current_song_position = 0
+    state.song_duration = 0 -- Will be estimated during playback
     state.needs_next_chunk = 1
     state.decoder = require("cc.audio.dfpwm").make_decoder()
     state.playing_id = nil -- Reset to trigger new download
@@ -2165,6 +2350,213 @@ function radioHost.shufflePlaylist(state)
     if state.is_broadcasting then
         radioHost.broadcastPlaylistUpdate(state)
     end
+end
+
+-- PRE-BUFFER SYNCHRONIZATION FUNCTIONS
+
+-- Send sync command based on latency measurements
+function radioHost.sendSyncCommand(state, forceSync)
+    if not state.latency_tracker or not state.audio_buffer then
+        return false
+    end
+    
+    -- Calculate optimal sync timing
+    local syncData = latencyManager.calculateOptimalSync(state.latency_tracker)
+    if not syncData and not forceSync then
+        return false
+    end
+    
+    -- Generate new sync session if needed
+    if not state.sync_session_id or forceSync then
+        state.sync_session_id = os.getComputerID() .. "_sync_" .. os.epoch("utc")
+    end
+    
+    -- Get current buffer status
+    local bufferStatus = bufferManager.getBufferStatus(state.audio_buffer)
+    if not bufferStatus then
+        return false
+    end
+    
+    -- Prepare sync command data
+    local syncCommandData = {
+        target_position = bufferStatus.current_position,
+        sync_timestamp = syncData and syncData.sync_timestamp or (os.epoch("utc") + 1000),
+        slowest_client_latency = syncData and syncData.slowest_latency or 0,
+        buffer_offset = bufferStatus.buffered_duration,
+        song_id = state.audio_buffer.song_id,
+        session_id = state.sync_session_id
+    }
+    
+    -- Send sync command to all listeners
+    local stationId = os.getComputerID()
+    local success = radioProtocol.sendSyncCommand(stationId, syncCommandData)
+    
+    if success then
+        state.logger.info("RadioHost", string.format("Sync command sent: session=%s, latency=%.1fms, clients=%d", 
+            state.sync_session_id, syncData and syncData.slowest_latency or 0, syncData and syncData.active_clients or 0))
+    end
+    
+    return success
+end
+
+-- Enhanced audio loop with PRE-buffer support
+function radioHost.enhancedAudioLoop(state, speakers)
+    while true do
+        if state.playing and state.now_playing and not state.is_error then
+            -- Initialize buffer for new song
+            if state.audio_buffer and not state.audio_buffer.song_id then
+                local songId = state.now_playing.id or state.now_playing.name
+                bufferManager.resetBuffer(state.audio_buffer, songId, state.song_duration or 0)
+                state.logger.info("RadioHost", "Buffer initialized for song: " .. songId)
+            end
+            
+            -- Download and buffer audio chunks
+            if state.needs_next_chunk > 0 then
+                local success = radioHost.downloadAndBufferChunk(state)
+                if success then
+                    state.needs_next_chunk = state.needs_next_chunk - 1
+                    
+                    -- Broadcast chunk to clients if buffer system is enabled
+                    if state.audio_buffer and state.is_broadcasting then
+                        radioHost.broadcastBufferChunk(state)
+                    end
+                else
+                    state.needs_next_chunk = 0
+                end
+            end
+            
+            -- Play audio from buffer if ready
+            if state.audio_buffer and state.buffer_ready then
+                radioHost.playFromBuffer(state, speakers)
+            end
+        end
+        
+        sleep(0.1)
+    end
+end
+
+-- Download and buffer audio chunk
+function radioHost.downloadAndBufferChunk(state)
+    if not state.now_playing or not state.audio_buffer then
+        return false
+    end
+    
+    -- This is a simplified version - in reality you'd integrate with the existing HTTP download logic
+    -- For now, we'll simulate adding chunks to the buffer
+    
+    local currentTime = os.epoch("utc") / 1000
+    local songPosition = state.current_song_position
+    
+    -- Simulate audio data (in reality this would come from HTTP download)
+    local simulatedAudioData = string.rep("\x00", 1024) -- 1KB of silence as placeholder
+    
+    -- Add chunk to buffer
+    local success = bufferManager.addChunk(state.audio_buffer, simulatedAudioData, songPosition)
+    
+    if success then
+        state.current_song_position = songPosition + config.radio_sync.chunk_duration
+        state.logger.debug("RadioHost", string.format("Buffered chunk at position %.1fs", songPosition))
+    end
+    
+    return success
+end
+
+-- Broadcast buffer chunk to clients
+function radioHost.broadcastBufferChunk(state)
+    if not state.audio_buffer or not state.is_broadcasting then
+        return false
+    end
+    
+    -- Get the most recent chunk
+    local bufferStatus = bufferManager.getBufferStatus(state.audio_buffer)
+    if not bufferStatus or bufferStatus.active_chunks == 0 then
+        return false
+    end
+    
+    -- Find the latest chunk to broadcast
+    local latestChunk = nil
+    local latestTimestamp = 0
+    
+    for i = 1, state.audio_buffer.max_chunks do
+        local chunk = state.audio_buffer.chunks[i]
+        if chunk.id and chunk.timestamp > latestTimestamp then
+            latestChunk = chunk
+            latestTimestamp = chunk.timestamp
+        end
+    end
+    
+    if latestChunk then
+        -- Add song_id to chunk data
+        latestChunk.song_id = state.audio_buffer.song_id
+        
+        -- Broadcast to all clients
+        local stationId = os.getComputerID()
+        local success = radioProtocol.broadcastBufferChunk(stationId, latestChunk)
+        
+        if success then
+            state.logger.debug("RadioHost", string.format("Broadcasted chunk %s (%.1fs)", 
+                latestChunk.id, latestChunk.buffer_position))
+        end
+        
+        return success
+    end
+    
+    return false
+end
+
+-- Play audio from buffer
+function radioHost.playFromBuffer(state, speakers)
+    if not state.audio_buffer or not speakers then
+        return false
+    end
+    
+    local currentTime = os.epoch("utc") / 1000
+    local playbackPosition = currentTime - state.song_start_time
+    
+    -- Get chunk at current playback position
+    local chunk = bufferManager.getChunkAtPosition(state.audio_buffer, playbackPosition)
+    
+    if chunk and chunk.audio_data then
+        -- Play the chunk (simplified - in reality you'd use the existing audio playback logic)
+        for _, speaker in ipairs(speakers) do
+            if speaker and speaker.playAudio then
+                speaker.playAudio(chunk.audio_data)
+            end
+        end
+        
+        -- Advance buffer position
+        bufferManager.advancePosition(state.audio_buffer, config.radio_sync.chunk_duration)
+        
+        state.logger.debug("RadioHost", string.format("Played chunk from buffer at position %.1fs", playbackPosition))
+        return true
+    end
+    
+    return false
+end
+
+-- Get PRE-buffer system status for UI display
+function radioHost.getBufferSystemStatus(state)
+    if not state.audio_buffer or not state.latency_tracker then
+        return {
+            enabled = false,
+            status = "Disabled"
+        }
+    end
+    
+    local bufferStatus = bufferManager.getBufferStatus(state.audio_buffer)
+    local clientStats = latencyManager.getAllClientStats(state.latency_tracker)
+    local activeClients = latencyManager.getActiveClientCount(state.latency_tracker)
+    
+    return {
+        enabled = state.sync_enabled,
+        status = state.buffer_ready and "Ready" or "Buffering",
+        buffer_health = bufferStatus and bufferStatus.buffer_health or 0,
+        buffered_duration = bufferStatus and bufferStatus.buffered_duration or 0,
+        active_chunks = bufferStatus and bufferStatus.active_chunks or 0,
+        active_clients = activeClients,
+        slowest_latency = clientStats[#clientStats] and clientStats[#clientStats].average_latency or 0,
+        sync_session = state.sync_session_id
+    }
 end
 
 return radioHost 

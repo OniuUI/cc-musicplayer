@@ -354,6 +354,202 @@ function radioProtocol.extractMessageData(message)
     return nil
 end
 
+-- PRE-BUFFER SYNCHRONIZATION FUNCTIONS
+
+-- Send ping request for latency measurement
+function radioProtocol.sendPingRequest(clientId, sequence)
+    if not modem or not isInitialized then
+        return false
+    end
+    
+    local pingMessage = {
+        type = "ping_request",
+        timestamp = os.epoch("utc"),
+        sequence = sequence
+    }
+    
+    return radioProtocol.sendToComputer(clientId, pingMessage)
+end
+
+-- Send ping response
+function radioProtocol.sendPingResponse(clientId, originalTimestamp, sequence)
+    if not modem or not isInitialized then
+        return false
+    end
+    
+    local pongMessage = {
+        type = "ping_response",
+        timestamp = os.epoch("utc"),
+        sequence = sequence,
+        client_timestamp = originalTimestamp
+    }
+    
+    return radioProtocol.sendToComputer(clientId, pongMessage)
+end
+
+-- Broadcast buffer chunk to all listeners
+function radioProtocol.broadcastBufferChunk(stationId, chunkData)
+    if not modem or not isInitialized or not chunkData then
+        return false
+    end
+    
+    local stationChannel = radioProtocol.getStationChannel(stationId)
+    
+    local chunkMessage = {
+        type = "buffer_chunk",
+        chunk_id = chunkData.id,
+        audio_data = chunkData.audio_data,
+        buffer_position = chunkData.buffer_position,
+        song_position = chunkData.song_position,
+        timestamp = chunkData.timestamp,
+        size = chunkData.size,
+        song_id = chunkData.song_id or "unknown"
+    }
+    
+    return radioProtocol.sendToChannel(stationChannel, chunkMessage)
+end
+
+-- Send sync command to coordinate playback
+function radioProtocol.sendSyncCommand(stationId, syncData)
+    if not modem or not isInitialized or not syncData then
+        return false
+    end
+    
+    local stationChannel = radioProtocol.getStationChannel(stationId)
+    
+    local syncMessage = {
+        type = "sync_command",
+        target_position = syncData.target_position,
+        sync_timestamp = syncData.sync_timestamp,
+        slowest_client_latency = syncData.slowest_client_latency,
+        buffer_offset = syncData.buffer_offset,
+        song_id = syncData.song_id,
+        session_id = syncData.session_id
+    }
+    
+    return radioProtocol.sendToChannel(stationChannel, syncMessage)
+end
+
+-- Send buffer status update
+function radioProtocol.sendBufferStatus(stationId, bufferStatus)
+    if not modem or not isInitialized or not bufferStatus then
+        return false
+    end
+    
+    local stationChannel = radioProtocol.getStationChannel(stationId)
+    
+    local statusMessage = {
+        type = "buffer_status",
+        buffer_health = bufferStatus.buffer_health,
+        buffered_duration = bufferStatus.buffered_duration,
+        current_position = bufferStatus.current_position,
+        active_chunks = bufferStatus.active_chunks,
+        song_id = bufferStatus.song_id,
+        timestamp = os.epoch("utc")
+    }
+    
+    return radioProtocol.sendToChannel(stationChannel, statusMessage)
+end
+
+-- Send client buffer ready notification
+function radioProtocol.sendClientBufferReady(stationId, clientId, bufferInfo)
+    if not modem or not isInitialized then
+        return false
+    end
+    
+    local readyMessage = {
+        type = "client_buffer_ready",
+        client_id = clientId,
+        buffer_duration = bufferInfo.buffer_duration,
+        ready_timestamp = os.epoch("utc"),
+        estimated_latency = bufferInfo.estimated_latency
+    }
+    
+    local stationChannel = radioProtocol.getStationChannel(stationId)
+    return radioProtocol.sendToChannel(stationChannel, readyMessage)
+end
+
+-- Send emergency resync request
+function radioProtocol.sendEmergencyResync(stationId, reason)
+    if not modem or not isInitialized then
+        return false
+    end
+    
+    local resyncMessage = {
+        type = "emergency_resync",
+        reason = reason or "Unknown",
+        timestamp = os.epoch("utc"),
+        client_id = os.getComputerID()
+    }
+    
+    local stationChannel = radioProtocol.getStationChannel(stationId)
+    return radioProtocol.sendToChannel(stationChannel, resyncMessage)
+end
+
+-- Listen for specific message types with timeout
+function radioProtocol.waitForMessage(channel, messageType, timeoutSeconds)
+    if not modem or not isInitialized then
+        return nil
+    end
+    
+    radioProtocol.openChannel(channel)
+    
+    local timeout = timeoutSeconds or 5
+    local startTime = os.clock()
+    
+    while (os.clock() - startTime) < timeout do
+        local event, side, receivedChannel, replyChannel, message, distance = os.pullEvent("modem_message")
+        
+        if receivedChannel == channel and radioProtocol.isValidMessage(message) then
+            local data = radioProtocol.extractMessageData(message)
+            
+            if data and data.type == messageType then
+                return data, message.timestamp, distance
+            end
+        end
+        
+        sleep(0.05) -- Small delay to prevent busy waiting
+    end
+    
+    return nil -- Timeout
+end
+
+-- Batch send multiple chunks efficiently
+function radioProtocol.batchSendChunks(stationId, chunks)
+    if not modem or not isInitialized or not chunks or #chunks == 0 then
+        return false
+    end
+    
+    local stationChannel = radioProtocol.getStationChannel(stationId)
+    local sentCount = 0
+    
+    for _, chunk in ipairs(chunks) do
+        if radioProtocol.broadcastBufferChunk(stationId, chunk) then
+            sentCount = sentCount + 1
+        end
+        
+        -- Small delay between chunks to prevent network flooding
+        sleep(0.01)
+    end
+    
+    return sentCount == #chunks, sentCount
+end
+
+-- Get network statistics
+function radioProtocol.getNetworkStats()
+    if not modem then
+        return nil
+    end
+    
+    return {
+        modem_available = true,
+        wireless_range = modem.isWireless() and "unlimited" or "wired",
+        open_channels = radioProtocol.listOpenChannels(),
+        channel_count = 0,
+        protocol_version = PROTOCOL_VERSION
+    }
+end
+
 -- DEBUGGING AND MONITORING
 function radioProtocol.getStatus()
     return {

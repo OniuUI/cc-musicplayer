@@ -122,39 +122,45 @@ local function confirmUninstall()
 end
 
 local function removeFiles()
-    -- Files to remove - UPDATED to include radio modules
+    -- Files to remove during uninstallation
     local files = {
-        -- Core files
-        "startup.lua",
-        "version.txt",
-
-        -- Install files
-        "install.lua",
-        "upgrade.lua",
-        "download",
-        
-        -- Configuration
-        "musicplayer/config.lua",
-        "musicplayer/app_manager.lua",
-        
-        -- New modular files
+        -- Core system files
         "musicplayer/core/system.lua",
-        "musicplayer/utils/common.lua",
-        "musicplayer/middleware/error_handler.lua",
-        "musicplayer/network/http_client.lua",
-        "musicplayer/network/radio_protocol.lua",
-        "musicplayer/audio/speaker_manager.lua",
-        "musicplayer/audio/audio_processor.lua",
-        "musicplayer/ui/themes.lua",
-        "musicplayer/ui/components.lua",
-        "musicplayer/ui/layouts/radio.lua",
-        "musicplayer/features/menu/main_menu.lua",
-        "musicplayer/features/youtube/youtube_player.lua",
-        "musicplayer/features/radio/radio_client.lua",
-        "musicplayer/features/radio/radio_host.lua",
+        "musicplayer/config.lua",
+        
+        -- Telemetry and logging
         "musicplayer/telemetry/telemetry.lua",
         "musicplayer/telemetry/logger.lua",
-        "musicplayer/telemetry/system_detector.lua",
+        
+        -- Audio system
+        "musicplayer/audio/speaker_manager.lua",
+        "musicplayer/audio/audio_processor.lua",
+        "musicplayer/audio/buffer_manager.lua",
+        
+        -- Network system
+        "musicplayer/network/http_client.lua",
+        "musicplayer/network/radio_protocol.lua",
+        "musicplayer/network/latency_manager.lua",
+        
+        -- Features
+        "musicplayer/features/youtube/youtube_player.lua",
+        "musicplayer/features/radio/radio_host.lua",
+        "musicplayer/features/radio/radio_client.lua",
+        "musicplayer/features/menu/main_menu.lua",
+        
+        -- UI system
+        "musicplayer/ui/components.lua",
+        "musicplayer/ui/themes.lua",
+        "musicplayer/ui/layouts/main_layout.lua",
+        
+        -- Middleware
+        "musicplayer/middleware/error_handler.lua",
+        
+        -- Utilities
+        "musicplayer/utils/file_utils.lua",
+        
+        -- Main startup file
+        "startup.lua",
         
         -- Configuration utilities
         "configure_logging.lua",
