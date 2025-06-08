@@ -65,22 +65,27 @@ function radioClient.init(systemModules)
         last_sync_time = 0,
         sync_timeout = 60, -- seconds - only for detecting truly dead hosts
         
-        -- Song timeline tracking
+        -- Song timeline tracking - PROPER TIME-BASED SYNC
         song_start_time = 0, -- When we started playing current song locally
         host_song_start_time = 0, -- When host started playing current song
+        song_duration = 0, -- Total length of current song in seconds
         last_timeline_update = 0, -- When we last got timeline info from host
+        network_latency = 0, -- Estimated network latency to host
+        latency_samples = {}, -- Store recent latency measurements
         
-        -- Sync adjustment system - MUCH more conservative
+        -- Time-based sync system - NEVER STOPS MUSIC
         sync_drift_samples = {}, -- Store recent drift measurements
-        max_drift_samples = 5, -- Need 5 consistent measurements
-        major_sync_threshold = 10.0, -- Only major corrections above 10 seconds
-        minor_sync_threshold = 3.0, -- Minor corrections above 3 seconds
+        max_drift_samples = 3, -- Need 3 consistent measurements (reduced for faster response)
+        major_sync_threshold = 5.0, -- Major corrections above 5 seconds
+        minor_sync_threshold = 1.0, -- Minor corrections above 1 second
         last_sync_correction = 0, -- When we last made a correction
-        sync_correction_cooldown = 45, -- Don't correct more than once per 45 seconds
-        allow_playback = true, -- Whether to allow audio playback (vs skipping for sync)
+        sync_correction_cooldown = 10, -- Don't correct more than once per 10 seconds (reduced)
         
-        -- Playback speed adjustment for sync
+        -- Playback speed adjustment for sync - CONTINUOUS MUSIC
         playback_speed_multiplier = 1.0, -- Normal speed = 1.0, faster = >1.0, slower = <1.0
+        target_song_position = 0, -- Where we should be in the song based on host timing
+        actual_song_position = 0, -- Where we actually are in the song
+        position_drift = 0, -- Difference between target and actual position
         
         -- Network state
         protocol_available = false,
@@ -435,6 +440,68 @@ function radioClient.drawNowPlaying(state)
             term.setCursorPos(3, 11)
             term.write("⏸ Paused (Host Paused)")
         end
+        
+        -- Song time/position display
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.yellow)
+        term.setCursorPos(3, 12)
+        term.write("Song Position:")
+        
+        -- Calculate and display current position
+        local currentPosition = state.actual_song_position or 0
+        local totalDuration = state.song_duration or 0
+        local targetPosition = state.target_song_position or 0
+        
+        -- Format time as MM:SS
+        local function formatTime(seconds)
+            local mins = math.floor(seconds / 60)
+            local secs = math.floor(seconds % 60)
+            return string.format("%d:%02d", mins, secs)
+        end
+        
+        term.setTextColor(colors.white)
+        term.setCursorPos(3, 13)
+        if totalDuration > 0 then
+            term.write(formatTime(currentPosition) .. " / " .. formatTime(totalDuration))
+            
+            -- Show sync info if we have target position
+            if targetPosition > 0 and math.abs(currentPosition - targetPosition) > 0.5 then
+                term.setTextColor(colors.cyan)
+                term.write(" (sync: " .. formatTime(targetPosition) .. ")")
+            end
+        else
+            term.write(formatTime(currentPosition) .. " / --:--")
+        end
+        
+        -- Progress bar
+        if totalDuration > 0 then
+            term.setCursorPos(3, 14)
+            local progressWidth = 30
+            local progress = math.min(1.0, currentPosition / totalDuration)
+            local fillWidth = math.floor(progress * progressWidth)
+            
+            term.setBackgroundColor(colors.gray)
+            term.setTextColor(colors.white)
+            term.write("[")
+            
+            for i = 1, progressWidth do
+                if i <= fillWidth then
+                    term.setBackgroundColor(colors.lime)
+                    term.write(" ")
+                else
+                    term.setBackgroundColor(colors.gray)
+                    term.write(" ")
+                end
+            end
+            
+            term.setBackgroundColor(colors.gray)
+            term.write("]")
+            
+            -- Show percentage
+            term.setBackgroundColor(colors.black)
+            term.setTextColor(colors.lightGray)
+            term.write(" " .. math.floor(progress * 100) .. "%")
+        end
     else
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.lightGray)
@@ -444,9 +511,9 @@ function radioClient.drawNowPlaying(state)
         term.write("  Waiting for host to start music")
     end
     
-    -- Volume control (local only)
+    -- Volume control (local only) - moved down to accommodate song position
     term.setTextColor(colors.yellow)
-    term.setCursorPos(3, 13)
+    term.setCursorPos(3, 16)
     term.write("Local Volume: ")
     
     local volumePercent = math.floor((state.volume / 3.0) * 100)
@@ -454,7 +521,7 @@ function radioClient.drawNowPlaying(state)
     term.write(volumePercent .. "%")
     
     -- Volume slider
-    term.setCursorPos(3, 14)
+    term.setCursorPos(3, 17)
     local sliderWidth = 20
     local fillWidth = math.floor((state.volume / 3.0) * sliderWidth)
     
@@ -475,14 +542,14 @@ function radioClient.drawNowPlaying(state)
     term.setBackgroundColor(colors.gray)
     term.write("]")
     
-    -- Bass and Treble Controls
+    -- Bass and Treble Controls - moved down
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.yellow)
-    term.setCursorPos(3, 16)
+    term.setCursorPos(3, 19)
     term.write("Audio Controls:")
     
     -- Bass control
-    term.setCursorPos(3, 17)
+    term.setCursorPos(3, 20)
     term.setTextColor(colors.white)
     term.write("Bass: ")
     
@@ -494,18 +561,18 @@ function radioClient.drawNowPlaying(state)
     -- Bass adjustment buttons
     term.setBackgroundColor(colors.red)
     term.setTextColor(colors.white)
-    term.setCursorPos(15, 17)
+    term.setCursorPos(15, 20)
     term.write(" - ")
     
     term.setBackgroundColor(colors.lime)
     term.setTextColor(colors.black)
-    term.setCursorPos(19, 17)
+    term.setCursorPos(19, 20)
     term.write(" + ")
     
     -- Treble control
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
-    term.setCursorPos(25, 17)
+    term.setCursorPos(25, 20)
     term.write("Treble: ")
     
     local trebleLevel = state.speakerManager.getTreble()
@@ -516,18 +583,18 @@ function radioClient.drawNowPlaying(state)
     -- Treble adjustment buttons
     term.setBackgroundColor(colors.red)
     term.setTextColor(colors.white)
-    term.setCursorPos(40, 17)
+    term.setCursorPos(40, 20)
     term.write(" - ")
     
     term.setBackgroundColor(colors.lime)
     term.setTextColor(colors.black)
-    term.setCursorPos(44, 17)
+    term.setCursorPos(44, 20)
     term.write(" + ")
     
     -- Audio processing toggle
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.lightGray)
-    term.setCursorPos(3, 18)
+    term.setCursorPos(3, 21)
     term.write("Audio Processing: ")
     
     if state.speakerManager.isAudioProcessingEnabled() then
@@ -540,8 +607,8 @@ function radioClient.drawNowPlaying(state)
         term.write(" OFF ")
     end
     
-    -- Station playlist (if available) - moved down to accommodate audio controls
-    local playlistStartY = 20
+    -- Station playlist (if available) - moved down to accommodate song position
+    local playlistStartY = 23
     if #state.playlist > 0 then
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.yellow)
@@ -688,8 +755,8 @@ function radioClient.handleStationListClicks(state, x, y, speakers)
 end
 
 function radioClient.handleNowPlayingClicks(state, x, y, speakers)
-    -- Volume slider click
-    if y == 14 and x >= 4 and x <= 24 and not state.muted then
+    -- Volume slider click - moved down by 3 lines
+    if y == 17 and x >= 4 and x <= 24 and not state.muted then
         local sliderPos = x - 4
         local newVolume = (sliderPos / 20) * 3.0
         state.volume = math.max(0, math.min(3.0, newVolume))
@@ -698,15 +765,15 @@ function radioClient.handleNowPlayingClicks(state, x, y, speakers)
         return
     end
     
-    -- Mute/Unmute toggle (click on volume percentage)
-    if y == 13 and x >= 17 and x <= 25 then
+    -- Mute/Unmute toggle (click on volume percentage) - moved down by 3 lines
+    if y == 16 and x >= 17 and x <= 25 then
         state.muted = not state.muted
         state.logger.info("RadioClient", "Audio " .. (state.muted and "muted" or "unmuted"))
         return
     end
     
-    -- Bass and Treble controls
-    if y == 17 then
+    -- Bass and Treble controls - moved down by 3 lines
+    if y == 20 then
         -- Bass controls
         if x >= 15 and x < 18 then -- Bass minus button
             local currentBass = state.speakerManager.getBass()
@@ -731,8 +798,8 @@ function radioClient.handleNowPlayingClicks(state, x, y, speakers)
         return
     end
     
-    -- Audio processing toggle
-    if y == 18 and x >= 21 and x < 26 then
+    -- Audio processing toggle - moved down by 3 lines
+    if y == 21 and x >= 21 and x < 26 then
         local currentEnabled = state.speakerManager.isAudioProcessingEnabled()
         state.speakerManager.setAudioProcessingEnabled(not currentEnabled)
         state.logger.info("RadioClient", "Audio processing " .. (not currentEnabled and "enabled" or "disabled"))
@@ -774,6 +841,9 @@ function radioClient.connectToStation(state, station)
     state.connection_start_time = os.clock()
     state.connection_error = nil
     
+    -- Record connection attempt time for latency measurement
+    state.connection_attempt_time = os.epoch("utc") / 1000
+    
     -- Calculate channels
     local stationChannel = radioProtocol.getStationChannel(station.station_id)
     local clientChannel = radioProtocol.getClientChannel(os.getComputerID())
@@ -787,7 +857,8 @@ function radioClient.connectToStation(state, station)
     local joinRequest = {
         type = "join_request",
         listener_id = os.getComputerID(),
-        timestamp = os.epoch("utc")
+        timestamp = os.epoch("utc"),
+        request_time = state.connection_attempt_time -- For latency calculation
     }
     
     -- Create protocol message manually to control reply channel
@@ -890,17 +961,25 @@ function radioClient.audioLoop(state, speakers)
                 state.size = state.chunk_size
                 
                 if state.connected then
-                    state.logger.info("RadioClient", "Radio audio stream ready: " .. (state.now_playing and state.now_playing.name or "Unknown"))
+                    state.logger.info("RadioClient", "Radio audio stream ready: " .. (state.now_playing and state.now_playing.name or "Unknown") .. " at position " .. string.format("%.1f", state.actual_song_position or 0) .. "s")
+                    -- CLEAR AUDIO READY LOG
+                    term.setTextColor(colors.lime)
+                    print("🎵 AUDIO READY: Radio stream - " .. (state.now_playing and state.now_playing.name or "Unknown"))
+                    term.setTextColor(colors.white)
                 else
                     state.logger.info("RadioClient", "Local audio stream ready")
+                    -- CLEAR AUDIO READY LOG
+                    term.setTextColor(colors.lime)
+                    print("🎵 AUDIO READY: Local stream")
+                    term.setTextColor(colors.white)
                 end
                 
                 -- Now that we have the handle, start playing if we should be
-                if state.playing and state.now_playing and state.allow_playback and not state.is_playing_audio then
+                if state.playing and state.now_playing and not state.is_playing_audio then
                     state.needs_next_chunk = 1
                     local thisnowplayingid = state.now_playing.id
                     if state.playing_id == thisnowplayingid then
-                        state.logger.info("RadioClient", "Starting audio playback for: " .. state.now_playing.name)
+                        state.logger.info("RadioClient", "Starting audio playback for: " .. state.now_playing.name .. " at position " .. string.format("%.1f", state.actual_song_position or 0) .. "s")
                         radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                     end
                 end
@@ -1009,10 +1088,15 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
     
     -- CLEAR AUDIO START LOG
     term.setTextColor(colors.lime)
-    print("🎵 AUDIO STARTED: Playing " .. (state.now_playing and state.now_playing.name or "Unknown"))
+    print("🎵 AUDIO STARTED: Playing " .. (state.now_playing and state.now_playing.name or "Unknown") .. " at " .. string.format("%.1f", state.actual_song_position or 0) .. "s")
     term.setTextColor(colors.white)
     
-    -- Simple audio playback - no more aggressive skipping
+    -- Track playback timing for position calculation
+    local playback_start_time = os.epoch("utc") / 1000
+    local chunks_played = 0
+    local chunk_duration = 0.05 -- Approximate duration per chunk in seconds
+    
+    -- Continuous audio playback with position tracking
     while true do
         local chunk = state.player_handle.read(state.size)
         if not chunk then
@@ -1021,13 +1105,13 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                 state.logger.info("RadioClient", "Radio song finished")
                 -- CLEAR AUDIO STOP LOG
                 term.setTextColor(colors.yellow)
-                print("🎵 AUDIO STOPPED: Song finished naturally - " .. (state.now_playing and state.now_playing.name or "Unknown"))
+                print("🎵 SONG FINISHED: " .. (state.now_playing and state.now_playing.name or "Unknown"))
                 term.setTextColor(colors.white)
             else
                 state.logger.info("RadioClient", "Local song finished")
                 -- CLEAR AUDIO STOP LOG
                 term.setTextColor(colors.yellow)
-                print("🎵 AUDIO STOPPED: Local song finished")
+                print("🎵 SONG FINISHED: Local playback")
                 term.setTextColor(colors.white)
             end
             
@@ -1136,6 +1220,12 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                     sleep(0.05)
                     state.is_playing_audio = true
                 end
+                
+                -- Update song position based on playback time and speed multiplier
+                chunks_played = chunks_played + 1
+                local elapsed_time = (os.epoch("utc") / 1000) - playback_start_time
+                local adjusted_elapsed = elapsed_time * (state.playback_speed_multiplier or 1.0)
+                state.actual_song_position = (state.actual_song_position or 0) + (chunk_duration * (state.playback_speed_multiplier or 1.0))
                 
                 -- Apply speed multiplier for sync adjustment
                 if state.playback_speed_multiplier and state.playback_speed_multiplier ~= 1.0 then
@@ -1279,6 +1369,14 @@ function radioClient.networkLoop(state)
                     if channel == clientChannel and data and data.type == "join_response" then
                         state.logger.info("RadioClient", "Join response received! Success: " .. tostring(data.success))
                         
+                        -- Calculate initial latency from connection attempt
+                        if state.connection_attempt_time and data.response_time then
+                            local latency = (currentTime - state.connection_attempt_time) / 2
+                            table.insert(state.latency_samples, latency)
+                            state.network_latency = latency
+                            state.logger.info("RadioClient", "Initial network latency: " .. string.format("%.3f", latency) .. "s")
+                        end
+                        
                         if data.success then
                             state.connection_status = "connected"
                             state.connected = true
@@ -1290,6 +1388,7 @@ function radioClient.networkLoop(state)
                             -- Update state from host response
                             if data.now_playing then
                                 state.now_playing = data.now_playing
+                                state.song_duration = data.song_duration or 0
                             end
                             
                             if data.playing ~= nil then
@@ -1306,10 +1405,24 @@ function radioClient.networkLoop(state)
                             
                             state.logger.info("RadioClient", "Connected to station: " .. state.connected_station.station_name)
                             
-                            -- If we have a song and should be playing, trigger audio update
+                            -- If we have a song and should be playing, start at correct position
                             if state.playing and state.now_playing then
-                                state.logger.info("RadioClient", "Connection established - starting audio for: " .. state.now_playing.name)
-                                os.queueEvent("audio_update")
+                                -- Calculate where we should start with latency compensation
+                                local host_song_position = 0
+                                if data.playback_start_time then
+                                    state.host_song_start_time = data.playback_start_time
+                                    host_song_position = (currentTime + state.network_latency) - state.host_song_start_time
+                                end
+                                
+                                state.target_song_position = math.max(0, host_song_position)
+                                state.logger.info("RadioClient", "Connection established - starting audio for: " .. state.now_playing.name .. " at position " .. string.format("%.1f", state.target_song_position) .. "s")
+                                
+                                -- CLEAR CONNECTION LOG
+                                term.setTextColor(colors.lime)
+                                print("🔗 CONNECTED: Starting " .. state.now_playing.name .. " at " .. string.format("%.1f", state.target_song_position) .. "s")
+                                term.setTextColor(colors.white)
+                                
+                                radioClient.startAudioAtPosition(state, state.target_song_position)
                             end
                         else
                             state.connection_status = "error"
@@ -1468,7 +1581,25 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         os.queueEvent("redraw_screen")
         
     elseif data.type == "ping_response" then
-        -- Keep-alive response from host
+        -- Keep-alive response from host with latency measurement
+        if state.last_ping_sent and data.ping_time then
+            local latency = (currentTime - state.last_ping_sent) / 2
+            table.insert(state.latency_samples, latency)
+            
+            -- Keep only recent samples
+            if #state.latency_samples > 10 then
+                table.remove(state.latency_samples, 1)
+            end
+            
+            -- Calculate average latency
+            local total_latency = 0
+            for _, sample in ipairs(state.latency_samples) do
+                total_latency = total_latency + sample
+            end
+            state.network_latency = total_latency / #state.latency_samples
+            
+            state.logger.debug("RadioClient", "Ping response - latency: " .. string.format("%.3f", latency) .. "s, avg: " .. string.format("%.3f", state.network_latency) .. "s")
+        end
         -- Already updated last_sync_time at start of function
     end
 end
@@ -1477,24 +1608,49 @@ function radioClient.handleSyncStatus(state, data)
     local currentTime = os.epoch("utc") / 1000
     state.last_timeline_update = currentTime
     
+    -- Calculate network latency if we have ping data
+    if data.ping_response and state.last_ping_sent then
+        local latency = (currentTime - state.last_ping_sent) / 2 -- Round trip time / 2
+        table.insert(state.latency_samples, latency)
+        
+        -- Keep only recent samples
+        if #state.latency_samples > 10 then
+            table.remove(state.latency_samples, 1)
+        end
+        
+        -- Calculate average latency
+        local total_latency = 0
+        for _, sample in ipairs(state.latency_samples) do
+            total_latency = total_latency + sample
+        end
+        state.network_latency = total_latency / #state.latency_samples
+        
+        state.logger.debug("RadioClient", "Network latency: " .. string.format("%.3f", state.network_latency) .. "s")
+    end
+    
     -- Update host timing information
     if data.playback_start_time then
         state.host_song_start_time = data.playback_start_time
+    end
+    
+    -- Update song duration if provided
+    if data.song_duration then
+        state.song_duration = data.song_duration
     end
     
     -- Check if this is a new playback session (song change)
     if data.playback_session and data.playback_session ~= state.current_playback_session then
         state.logger.info("RadioClient", "New playback session detected: " .. data.playback_session)
         
-        -- CLEAR AUDIO STOP LOG - Only for song changes, not sync
+        -- CLEAR SONG CHANGE LOG
         term.setTextColor(colors.cyan)
-        print("🔄 SONG CHANGE: New playback session - " .. data.playback_session)
+        print("🔄 SONG CHANGE: New session - " .. (data.now_playing and data.now_playing.name or "Unknown"))
         term.setTextColor(colors.white)
         
         -- Reset sync tracking for new session
         state.sync_drift_samples = {}
-        state.allow_playback = true
         state.current_playback_session = data.playback_session
+        state.playback_speed_multiplier = 1.0
         
         -- Stop current audio ONLY for song changes
         if state.player_handle then
@@ -1502,7 +1658,6 @@ function radioClient.handleSyncStatus(state, data)
             state.player_handle = nil
         end
         
-        -- Stop speakers ONLY for song changes
         local speakers = state.speakerManager.getRawSpeakers()
         for _, speaker in ipairs(speakers) do
             speaker.stop()
@@ -1510,38 +1665,50 @@ function radioClient.handleSyncStatus(state, data)
         
         state.is_playing_audio = false
         
-        -- Start new session immediately
+        -- Start new session with proper timing
         if data.playing and data.now_playing then
             state.now_playing = data.now_playing
             state.playing = true
             state.host_song_start_time = data.playback_start_time or currentTime
+            state.song_duration = data.song_duration or 0
             
-            state.logger.info("RadioClient", "Starting new session: " .. data.now_playing.name)
+            -- Calculate where we should start in the song (with latency compensation)
+            local host_song_position = (currentTime + state.network_latency) - state.host_song_start_time
+            state.target_song_position = math.max(0, host_song_position)
+            
+            state.logger.info("RadioClient", "Starting new session: " .. data.now_playing.name .. " at position " .. string.format("%.1f", state.target_song_position) .. "s")
+            
             -- CLEAR AUDIO START LOG
             term.setTextColor(colors.lime)
-            print("🎵 SONG STARTING: New session - " .. data.now_playing.name)
+            print("🎵 SONG STARTING: " .. data.now_playing.name .. " at " .. string.format("%.1f", state.target_song_position) .. "s")
             term.setTextColor(colors.white)
-            os.queueEvent("audio_update")
+            
+            -- Start audio with proper position
+            radioClient.startAudioAtPosition(state, state.target_song_position)
         end
         
         return -- Exit early for new sessions
     end
     
-    -- Handle ongoing sync for existing session - CONTINUOUS PLAYBACK WITH SUBTLE ADJUSTMENTS
+    -- TIME-BASED SYNC FOR EXISTING SESSION - CONTINUOUS PLAYBACK
     if state.current_playback_session and data.playback_session == state.current_playback_session and 
        state.playing and state.now_playing and state.host_song_start_time > 0 then
         
-        -- Calculate timeline positions
-        local host_song_position = currentTime - state.host_song_start_time
+        -- Calculate current positions with latency compensation
+        local host_song_position = (currentTime + state.network_latency) - state.host_song_start_time
         local client_song_position = currentTime - state.song_start_time
-        local timeline_drift = host_song_position - client_song_position
+        
+        -- Update target position
+        state.target_song_position = host_song_position
+        state.actual_song_position = client_song_position
+        state.position_drift = state.target_song_position - state.actual_song_position
         
         -- Store drift sample
         table.insert(state.sync_drift_samples, {
             timestamp = currentTime,
-            host_position = host_song_position,
-            client_position = client_song_position,
-            drift = timeline_drift
+            target_position = state.target_song_position,
+            actual_position = state.actual_song_position,
+            drift = state.position_drift
         })
         
         -- Keep only recent samples
@@ -1549,9 +1716,9 @@ function radioClient.handleSyncStatus(state, data)
             table.remove(state.sync_drift_samples, 1)
         end
         
-        state.logger.info("RadioClient", "Timeline sync: host=" .. string.format("%.1f", host_song_position) .. "s, client=" .. string.format("%.1f", client_song_position) .. "s, drift=" .. string.format("%.1f", timeline_drift) .. "s")
+        state.logger.info("RadioClient", "Position sync: target=" .. string.format("%.1f", state.target_song_position) .. "s, actual=" .. string.format("%.1f", state.actual_song_position) .. "s, drift=" .. string.format("%.1f", state.position_drift) .. "s")
         
-        -- CONTINUOUS PLAYBACK: Only make subtle adjustments, never stop music
+        -- CONTINUOUS PLAYBACK: Adjust speed based on position drift
         if #state.sync_drift_samples >= state.max_drift_samples and 
            (currentTime - state.last_sync_correction) >= state.sync_correction_cooldown then
             
@@ -1564,79 +1731,59 @@ function radioClient.handleSyncStatus(state, data)
             
             state.logger.info("RadioClient", "Sync analysis: avg_drift=" .. string.format("%.1f", average_drift) .. "s")
             
-            -- MAJOR DRIFT: Adjust playback speed slightly instead of stopping
+            -- MAJOR DRIFT: Significant speed adjustment
             if math.abs(average_drift) > state.major_sync_threshold then
-                state.logger.warn("RadioClient", "Major sync drift detected (" .. string.format("%.1f", average_drift) .. "s) - adjusting playback speed")
+                local speed_adjustment = 1.0 + (average_drift * 0.1) -- 10% per second of drift
+                speed_adjustment = math.max(0.5, math.min(2.0, speed_adjustment)) -- Limit to 50%-200%
                 
-                -- CLEAR AUDIO INFO LOG - No stopping, just speed adjustment
+                state.playback_speed_multiplier = speed_adjustment
+                state.logger.warn("RadioClient", "Major position drift (" .. string.format("%.1f", average_drift) .. "s) - adjusting speed to " .. string.format("%.2f", speed_adjustment))
+                
+                -- CLEAR SYNC LOG
                 term.setTextColor(colors.lightBlue)
-                print("🎵 SYNC ADJUST: Major drift (" .. string.format("%.1f", average_drift) .. "s) - adjusting speed")
+                print("🎵 SYNC MAJOR: Drift " .. string.format("%.1f", average_drift) .. "s - speed " .. string.format("%.2f", speed_adjustment) .. "x")
                 term.setTextColor(colors.white)
                 
-                -- Adjust playback speed by modifying chunk timing
-                if average_drift > 0 then
-                    -- We're behind - speed up slightly by reducing sleep between chunks
-                    state.playback_speed_multiplier = 1.1 -- 10% faster
-                    state.logger.info("RadioClient", "Speeding up playback to catch up")
-                else
-                    -- We're ahead - slow down slightly by increasing sleep between chunks
-                    state.playback_speed_multiplier = 0.9 -- 10% slower
-                    state.logger.info("RadioClient", "Slowing down playback to let host catch up")
-                end
-                
-                -- Reset speed after a short time
+                -- Reset speed after adjustment period
                 local function resetSpeed()
-                    sleep(5) -- Adjust for 5 seconds
+                    sleep(math.min(10, math.abs(average_drift) * 2)) -- Adjust for up to 10 seconds
                     state.playback_speed_multiplier = 1.0
-                    state.logger.info("RadioClient", "Playback speed reset to normal")
+                    state.logger.info("RadioClient", "Speed reset to normal")
                     term.setTextColor(colors.lightBlue)
-                    print("🎵 SYNC NORMAL: Playback speed reset")
+                    print("🎵 SYNC NORMAL: Speed reset to 1.0x")
                     term.setTextColor(colors.white)
                 end
                 
-                -- Run speed reset in background
-                parallel.waitForAny(
-                    resetSpeed,
-                    function() sleep(0.01) end -- Continue immediately
-                )
+                parallel.waitForAny(resetSpeed, function() sleep(0.01) end)
                 
-                state.sync_drift_samples = {} -- Clear samples
-                state.last_sync_correction = currentTime
-                
-            -- MINOR DRIFT: Very subtle adjustments
+            -- MINOR DRIFT: Subtle speed adjustment
             elseif math.abs(average_drift) > state.minor_sync_threshold then
-                state.logger.info("RadioClient", "Minor sync drift detected (" .. string.format("%.1f", average_drift) .. "s) - making micro adjustment")
+                local speed_adjustment = 1.0 + (average_drift * 0.05) -- 5% per second of drift
+                speed_adjustment = math.max(0.8, math.min(1.2, speed_adjustment)) -- Limit to 80%-120%
                 
-                -- CLEAR AUDIO INFO LOG - Micro adjustment
+                state.playback_speed_multiplier = speed_adjustment
+                state.logger.info("RadioClient", "Minor position drift (" .. string.format("%.1f", average_drift) .. "s) - adjusting speed to " .. string.format("%.2f", speed_adjustment))
+                
+                -- CLEAR SYNC LOG
                 term.setTextColor(colors.lightBlue)
-                print("🎵 SYNC MICRO: Minor drift (" .. string.format("%.1f", average_drift) .. "s) - micro adjust")
+                print("🎵 SYNC MINOR: Drift " .. string.format("%.1f", average_drift) .. "s - speed " .. string.format("%.2f", speed_adjustment) .. "x")
                 term.setTextColor(colors.white)
                 
-                -- Very subtle speed adjustment
-                if average_drift > 0 then
-                    state.playback_speed_multiplier = 1.02 -- 2% faster
-                else
-                    state.playback_speed_multiplier = 0.98 -- 2% slower
-                end
-                
-                -- Reset after shorter time
+                -- Reset speed after shorter period
                 local function resetMicroSpeed()
-                    sleep(2) -- Adjust for 2 seconds
+                    sleep(5) -- Adjust for 5 seconds
                     state.playback_speed_multiplier = 1.0
                 end
                 
-                parallel.waitForAny(
-                    resetMicroSpeed,
-                    function() sleep(0.01) end -- Continue immediately
-                )
+                parallel.waitForAny(resetMicroSpeed, function() sleep(0.01) end)
                 
-                state.sync_drift_samples = {} -- Clear samples
-                state.last_sync_correction = currentTime
             else
-                state.logger.info("RadioClient", "Sync drift within acceptable range")
-                -- Ensure normal speed
+                -- Drift within acceptable range - ensure normal speed
                 state.playback_speed_multiplier = 1.0
             end
+            
+            state.sync_drift_samples = {} -- Clear samples after adjustment
+            state.last_sync_correction = currentTime
         end
     end
     
@@ -1645,21 +1792,25 @@ function radioClient.handleSyncStatus(state, data)
         if data.now_playing.id ~= state.now_playing.id then
             state.logger.info("RadioClient", "Song change detected via sync")
             
-            -- CLEAR AUDIO STOP LOG - Only for song changes
+            -- CLEAR SONG CHANGE LOG
             term.setTextColor(colors.cyan)
-            print("🔄 SONG CHANGE: Via sync - " .. data.now_playing.name)
+            print("🔄 SONG CHANGE: " .. data.now_playing.name)
             term.setTextColor(colors.white)
             
             state.now_playing = data.now_playing
             state.current_song_index = data.current_song_index or 1
+            state.song_duration = data.song_duration or 0
             
             -- Reset sync tracking for new song
             state.sync_drift_samples = {}
-            state.allow_playback = true
-            state.playback_speed_multiplier = 1.0 -- Reset speed for new song
+            state.playback_speed_multiplier = 1.0
             state.host_song_start_time = data.playback_start_time or currentTime
             
-            -- Stop current audio ONLY for song changes
+            -- Calculate starting position with latency compensation
+            local host_song_position = (currentTime + state.network_latency) - state.host_song_start_time
+            state.target_song_position = math.max(0, host_song_position)
+            
+            -- Stop current audio for song change
             if state.player_handle then
                 state.player_handle.close()
                 state.player_handle = nil
@@ -1672,32 +1823,40 @@ function radioClient.handleSyncStatus(state, data)
             
             state.is_playing_audio = false
             
-            state.logger.info("RadioClient", "Song change sync: " .. state.now_playing.name)
+            state.logger.info("RadioClient", "Song change: " .. state.now_playing.name .. " at position " .. string.format("%.1f", state.target_song_position) .. "s")
+            
             -- CLEAR AUDIO START LOG
             term.setTextColor(colors.lime)
-            print("🎵 SONG STARTING: Change sync - " .. state.now_playing.name)
+            print("🎵 SONG STARTING: " .. state.now_playing.name .. " at " .. string.format("%.1f", state.target_song_position) .. "s")
             term.setTextColor(colors.white)
-            os.queueEvent("audio_update")
+            
+            -- Start new song at correct position
+            radioClient.startAudioAtPosition(state, state.target_song_position)
         end
     elseif data.now_playing and not state.now_playing then
         -- First time receiving song info
         state.logger.info("RadioClient", "Received initial song info: " .. data.now_playing.name)
         
-        -- CLEAR AUDIO START LOG
-        term.setTextColor(colors.lime)
-        print("🎵 SONG STARTING: Initial song - " .. data.now_playing.name)
-        term.setTextColor(colors.white)
-        
         state.now_playing = data.now_playing
         state.current_song_index = data.current_song_index or 1
         state.playing = data.playing or false
+        state.song_duration = data.song_duration or 0
         state.host_song_start_time = data.playback_start_time or currentTime
-        state.allow_playback = true
         state.playback_speed_multiplier = 1.0
         
         if state.playing then
-            state.logger.info("RadioClient", "Initial sync: " .. state.now_playing.name)
-            os.queueEvent("audio_update")
+            -- Calculate starting position with latency compensation
+            local host_song_position = (currentTime + state.network_latency) - state.host_song_start_time
+            state.target_song_position = math.max(0, host_song_position)
+            
+            state.logger.info("RadioClient", "Initial sync: " .. state.now_playing.name .. " at position " .. string.format("%.1f", state.target_song_position) .. "s")
+            
+            -- CLEAR AUDIO START LOG
+            term.setTextColor(colors.lime)
+            print("🎵 SONG STARTING: Initial - " .. state.now_playing.name .. " at " .. string.format("%.1f", state.target_song_position) .. "s")
+            term.setTextColor(colors.white)
+            
+            radioClient.startAudioAtPosition(state, state.target_song_position)
         end
     end
     
@@ -1707,7 +1866,7 @@ function radioClient.handleSyncStatus(state, data)
         state.playing = data.playing
         
         if not state.playing then
-            -- CLEAR AUDIO STOP LOG - Only when host actually pauses
+            -- CLEAR PAUSE LOG
             term.setTextColor(colors.orange)
             print("⏸️ MUSIC PAUSED: Host paused the station")
             term.setTextColor(colors.white)
@@ -1719,17 +1878,22 @@ function radioClient.handleSyncStatus(state, data)
             end
             state.is_playing_audio = false
         elseif state.playing and state.now_playing and not state.is_playing_audio then
-            -- Resume immediately
-            state.allow_playback = true
-            state.playback_speed_multiplier = 1.0 -- Reset speed on resume
+            -- Resume with proper position
+            state.playback_speed_multiplier = 1.0
             state.host_song_start_time = data.playback_start_time or currentTime
             
-            state.logger.info("RadioClient", "Resume sync: " .. state.now_playing.name)
-            -- CLEAR AUDIO START LOG
+            -- Calculate resume position with latency compensation
+            local host_song_position = (currentTime + state.network_latency) - state.host_song_start_time
+            state.target_song_position = math.max(0, host_song_position)
+            
+            state.logger.info("RadioClient", "Resume: " .. state.now_playing.name .. " at position " .. string.format("%.1f", state.target_song_position) .. "s")
+            
+            -- CLEAR RESUME LOG
             term.setTextColor(colors.lime)
-            print("▶️ MUSIC RESUMED: Host resumed the station")
+            print("▶️ MUSIC RESUMED: " .. state.now_playing.name .. " at " .. string.format("%.1f", state.target_song_position) .. "s")
             term.setTextColor(colors.white)
-            os.queueEvent("audio_update")
+            
+            radioClient.startAudioAtPosition(state, state.target_song_position)
         end
     end
     
@@ -1739,7 +1903,7 @@ function radioClient.handleSyncStatus(state, data)
         state.current_song_index = data.current_song_index or 1
     end
     
-    state.logger.info("RadioClient", "Sync completed - Session: " .. (state.current_playback_session or "none") .. ", Samples: " .. #state.sync_drift_samples .. "/" .. state.max_drift_samples .. ", Speed: " .. (state.playback_speed_multiplier or 1.0))
+    state.logger.info("RadioClient", "Sync completed - Position: " .. string.format("%.1f", state.actual_song_position or 0) .. "/" .. string.format("%.1f", state.target_song_position or 0) .. "s, Speed: " .. string.format("%.2f", state.playback_speed_multiplier) .. "x, Latency: " .. string.format("%.3f", state.network_latency) .. "s")
 end
 
 -- CLEANUP (FIXED)
@@ -1771,14 +1935,72 @@ function radioClient.sendPing(state)
         return
     end
     
+    local currentTime = os.epoch("utc") / 1000
+    
     local pingMessage = {
         type = "listener_ping",
         listener_id = os.getComputerID(),
-        timestamp = os.epoch("utc")
+        timestamp = os.epoch("utc"),
+        ping_time = currentTime -- For latency calculation
     }
+    
+    -- Store ping time for latency calculation
+    state.last_ping_sent = currentTime
     
     local stationChannel = radioProtocol.getStationChannel(state.connected_station_id)
     radioProtocol.sendToChannel(stationChannel, pingMessage)
+    
+    state.logger.debug("RadioClient", "Ping sent to measure latency")
+end
+
+-- Start audio at a specific position in the song (for proper sync)
+function radioClient.startAudioAtPosition(state, startPosition)
+    if not state.now_playing or not state.now_playing.id then
+        state.logger.error("RadioClient", "Cannot start audio - no song selected")
+        return
+    end
+    
+    -- Stop any existing playback
+    if state.player_handle then
+        state.player_handle.close()
+        state.player_handle = nil
+    end
+    
+    local speakers = state.speakerManager.getRawSpeakers()
+    for _, speaker in ipairs(speakers) do
+        speaker.stop()
+    end
+    
+    -- Set up for new audio stream
+    state.playing_id = state.now_playing.id
+    state.song_start_time = os.epoch("utc") / 1000 -- Record when we start locally
+    state.actual_song_position = startPosition -- We're starting at this position
+    
+    -- Build URL with start position parameter
+    local url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
+    
+    -- Add start position parameter if not starting from beginning
+    if startPosition > 0 then
+        url = url .. "&t=" .. math.floor(startPosition) -- Add start time in seconds
+        state.logger.info("RadioClient", "Requesting song with start position: " .. string.format("%.1f", startPosition) .. "s")
+    end
+    
+    state.last_download_url = url
+    state.playing_status = 0
+    state.needs_next_chunk = 0
+    state.is_loading = true
+    state.is_error = false
+    state.is_playing_audio = false
+    
+    -- Request the audio stream
+    http.request({url = url, binary = true})
+    
+    state.logger.info("RadioClient", "Audio stream requested for: " .. state.now_playing.name .. " at position " .. string.format("%.1f", startPosition) .. "s")
+    
+    -- CLEAR AUDIO REQUEST LOG
+    term.setTextColor(colors.cyan)
+    print("🎵 AUDIO REQUEST: " .. state.now_playing.name .. " at " .. string.format("%.1f", startPosition) .. "s")
+    term.setTextColor(colors.white)
 end
 
 return radioClient 
