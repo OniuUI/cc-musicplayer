@@ -887,6 +887,16 @@ function radioClient.audioLoop(state, speakers)
                     state.logger.info("RadioClient", "Local audio stream ready")
                 end
                 
+                -- Now that we have the handle, start playing if we should be
+                if state.playing and state.now_playing and state.allow_playback and not state.is_playing_audio then
+                    state.needs_next_chunk = 1
+                    local thisnowplayingid = state.now_playing.id
+                    if state.playing_id == thisnowplayingid then
+                        state.logger.info("RadioClient", "Starting audio playback for: " .. state.now_playing.name)
+                        radioClient.playLocalAudio(state, speakers, thisnowplayingid)
+                    end
+                end
+                
                 os.queueEvent("redraw_screen")
             end
         elseif event == "http_failure" then
@@ -897,7 +907,7 @@ function radioClient.audioLoop(state, speakers)
                 state.playing_id = nil
                 
                 if state.connected then
-                    state.logger.error("RadioClient", "Radio audio stream request failed")
+                    state.logger.error("RadioClient", "Radio audio stream request failed for: " .. (state.now_playing and state.now_playing.name or "Unknown"))
                 else
                     state.logger.error("RadioClient", "Local audio stream request failed")
                 end
@@ -911,13 +921,22 @@ function radioClient.audioLoop(state, speakers)
                 
                 if state.playing_id ~= thisnowplayingid then
                     -- New song - start streaming
+                    state.logger.info("RadioClient", "New song detected: " .. state.now_playing.name .. " (was: " .. (state.playing_id or "none") .. ")")
+                    
+                    -- Stop any existing playback
+                    if state.player_handle then
+                        state.player_handle.close()
+                        state.player_handle = nil
+                    end
+                    
                     state.playing_id = thisnowplayingid
                     state.last_download_url = state.api_base_url .. "?v=" .. state.version .. "&id=" .. textutils.urlEncode(state.playing_id)
                     state.playing_status = 0
-                    state.needs_next_chunk = 1
+                    state.needs_next_chunk = 0 -- Reset until HTTP request completes
+                    state.is_loading = true
+                    state.is_error = false
 
                     http.request({url = state.last_download_url, binary = true})
-                    state.is_loading = true
                     
                     -- Record when we started this song locally
                     state.song_start_time = os.epoch("utc") / 1000
@@ -930,16 +949,38 @@ function radioClient.audioLoop(state, speakers)
 
                     os.queueEvent("redraw_screen")
                     
-                elseif state.playing_status == 1 and state.needs_next_chunk == 1 then
-                    -- Play audio stream
+                elseif state.playing_status == 1 and state.needs_next_chunk == 1 and state.player_handle then
+                    -- Continue playing existing song - only if we have a valid handle
+                    state.logger.info("RadioClient", "Continuing audio playback for: " .. state.now_playing.name)
                     radioClient.playLocalAudio(state, speakers, thisnowplayingid)
+                elseif state.playing_status == 1 and state.needs_next_chunk == 1 and not state.player_handle then
+                    -- We should be playing but don't have a handle - this shouldn't happen
+                    state.logger.warn("RadioClient", "Audio update triggered but no player handle available")
+                    state.needs_next_chunk = 0
+                    state.is_playing_audio = false
                 end
+            elseif not state.allow_playback then
+                state.logger.debug("RadioClient", "Audio update triggered but playback not allowed (sync correction)")
+            elseif not state.playing then
+                state.logger.debug("RadioClient", "Audio update triggered but not playing")
+            elseif not state.now_playing then
+                state.logger.debug("RadioClient", "Audio update triggered but no song selected")
+            elseif state.is_playing_audio then
+                state.logger.debug("RadioClient", "Audio update triggered but already playing")
             end
         end
     end
 end
 
 function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
+    -- Check if we have a valid player handle
+    if not state.player_handle then
+        state.logger.error("RadioClient", "playLocalAudio called but player_handle is nil")
+        state.is_playing_audio = false
+        state.needs_next_chunk = 0
+        return
+    end
+    
     -- Simple audio playback - no more aggressive skipping
     while true do
         local chunk = state.player_handle.read(state.size)
@@ -982,6 +1023,11 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                             local name = peripheral.getName(speaker)
                             local playVolume = state.volume
                             
+                            -- Apply audio processing if enabled
+                            if state.speakerManager and state.speakerManager.processAudio then
+                                state.buffer = state.speakerManager.processAudio(state.buffer)
+                            end
+                            
                             if #speakers > 1 then
                                 if speaker.playAudio(state.buffer, playVolume) then
                                     parallel.waitForAny(
@@ -1021,6 +1067,7 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                     
                     local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
                     if not ok then
+                        state.logger.error("RadioClient", "Audio playback error: " .. tostring(err))
                         state.needs_next_chunk = 2
                         state.is_error = true
                         break
@@ -1180,6 +1227,12 @@ function radioClient.networkLoop(state)
                             end
                             
                             state.logger.info("RadioClient", "Connected to station: " .. state.connected_station.station_name)
+                            
+                            -- If we have a song and should be playing, trigger audio update
+                            if state.playing and state.now_playing then
+                                state.logger.info("RadioClient", "Connection established - starting audio for: " .. state.now_playing.name)
+                                os.queueEvent("audio_update")
+                            end
                         else
                             state.connection_status = "error"
                             state.connection_error = data.reason or "Connection rejected"
@@ -1235,13 +1288,14 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         
         -- Reset sync tracking for new song
         state.sync_drift_samples = {}
-        state.allow_playback = true
-        state.current_playback_session = data.playback_session
+        state.allow_playback = true -- Always allow playback for new songs
         
         -- Record host's song start time
         if data.playback_start_time then
             state.host_song_start_time = data.playback_start_time
         end
+        
+        state.logger.info("RadioClient", "Song change processed - Playing: " .. tostring(state.playing) .. ", Song: " .. (state.now_playing and state.now_playing.name or "none") .. ", Allow playback: " .. tostring(state.allow_playback))
         
         -- Start streaming the new song
         if state.playing and state.now_playing then
@@ -1269,6 +1323,7 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         elseif state.playing and state.now_playing and not state.is_playing_audio then
             -- Start playing when host resumes
             state.allow_playback = true
+            state.logger.info("RadioClient", "Host resumed - triggering audio update")
             os.queueEvent("audio_update")
         end
         
