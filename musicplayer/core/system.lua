@@ -33,9 +33,9 @@ function system.init()
         startTime = os.clock()
     }
     
-    -- Step 1: Initialize telemetry system
+    -- Step 1: Initialize telemetry system with logging config
     print("DEBUG: Step 1 - Initializing telemetry...")
-    local success, telemetryInstance = pcall(telemetry.init, "INFO")
+    local success, telemetryInstance = pcall(telemetry.init, config.logging)
     if not success then
         print("FATAL: Failed to initialize telemetry system")
         print("Error: " .. tostring(telemetryInstance))
@@ -47,6 +47,13 @@ function system.init()
     systemState.logger = telemetryInstance.getLogger()
     
     systemState.logger.info("System", "Starting Bognesferga Radio v" .. config.version)
+    
+    -- Log configuration status
+    if systemState.logger.isFileSavingEnabled() then
+        systemState.logger.info("System", "Log file saving enabled")
+    else
+        systemState.logger.info("System", "Log file saving disabled - logs only in memory and on monitor")
+    end
     
     -- Step 2: Initialize error handler
     print("DEBUG: Step 2 - Initializing error handler...")

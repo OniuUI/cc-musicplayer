@@ -31,35 +31,52 @@ logger.LEVEL_COLORS = {
 }
 
 -- Initialize logger
-function logger.init(logMonitor, logLevel)
+function logger.init(logMonitor, logConfig)
     logger.logMonitor = logMonitor
     
-    -- Handle both string and numeric log levels
-    if type(logLevel) == "string" then
-        local stringToLevel = {
-            DEBUG = logger.LEVELS.DEBUG,
-            INFO = logger.LEVELS.INFO,
-            WARN = logger.LEVELS.WARN,
-            ERROR = logger.LEVELS.ERROR,
-            FATAL = logger.LEVELS.FATAL
-        }
-        logger.logLevel = stringToLevel[logLevel:upper()] or logger.LEVELS.INFO
+    -- Use config object or fallback to old string/number format for backwards compatibility
+    if type(logConfig) == "table" then
+        -- New config format
+        logger.config = logConfig
+        logger.logLevel = logger.parseLogLevel(logConfig.level or "INFO")
+        logger.maxLogLines = logConfig.max_buffer_lines or 1000
+        logger.logFile = logConfig.session_log_file or "musicplayer/logs/session.log"
+        logger.emergencyLogFile = logConfig.emergency_log_file or "musicplayer/logs/emergency.log"
+        logger.saveToFile = logConfig.save_to_file ~= false -- Default to true
     else
-        logger.logLevel = logLevel or logger.LEVELS.INFO
+        -- Backwards compatibility with old format
+        logger.config = {
+            save_to_file = true,
+            level = logConfig or "INFO",
+            max_buffer_lines = 1000,
+            session_log_file = "musicplayer/logs/session.log",
+            emergency_log_file = "musicplayer/logs/emergency.log",
+            auto_cleanup = { enabled = false }
+        }
+        logger.logLevel = logger.parseLogLevel(logConfig or "INFO")
+        logger.maxLogLines = 1000
+        logger.logFile = "musicplayer/logs/session.log"
+        logger.emergencyLogFile = "musicplayer/logs/emergency.log"
+        logger.saveToFile = true
     end
     
-    logger.logFile = "musicplayer/logs/session.log"
-    logger.maxLogLines = 1000
     logger.logBuffer = {}
     
-    -- Create logs directory if it doesn't exist
-    if not fs.exists("musicplayer/logs") then
+    -- Create logs directory if file saving is enabled
+    if logger.saveToFile and not fs.exists("musicplayer/logs") then
         fs.makeDir("musicplayer/logs")
     end
     
-    -- Initialize log file with session header
-    local timestamp = os.date("%Y-%m-%d %H:%M:%S")
-    logger.writeToFile("=== NEW SESSION STARTED: " .. timestamp .. " ===")
+    -- Perform log cleanup if enabled
+    if logger.saveToFile and logger.config.auto_cleanup and logger.config.auto_cleanup.enabled then
+        logger.performLogCleanup()
+    end
+    
+    -- Initialize log file with session header (only if file saving is enabled)
+    if logger.saveToFile then
+        local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+        logger.writeToFile("=== NEW SESSION STARTED: " .. timestamp .. " ===")
+    end
     
     -- Clear log monitor if available
     if logger.logMonitor then
@@ -73,15 +90,109 @@ function logger.init(logMonitor, logLevel)
         logger.logMonitor.setCursorPos(1, 3)
     end
     
-    logger.log(logger.LEVELS.INFO, "Logger", "Logging system initialized")
+    local statusMsg = "Logging system initialized"
+    if not logger.saveToFile then
+        statusMsg = statusMsg .. " (file saving disabled)"
+    end
+    logger.log(logger.LEVELS.INFO, "Logger", statusMsg)
 end
 
--- Write to log file
+-- Parse log level from string or number
+function logger.parseLogLevel(level)
+    if type(level) == "string" then
+        local stringToLevel = {
+            DEBUG = logger.LEVELS.DEBUG,
+            INFO = logger.LEVELS.INFO,
+            WARN = logger.LEVELS.WARN,
+            ERROR = logger.LEVELS.ERROR,
+            FATAL = logger.LEVELS.FATAL
+        }
+        return stringToLevel[level:upper()] or logger.LEVELS.INFO
+    else
+        return level or logger.LEVELS.INFO
+    end
+end
+
+-- Write to log file (only if file saving is enabled)
 function logger.writeToFile(message)
+    if not logger.saveToFile then
+        return -- Skip file writing if disabled
+    end
+    
     local file = fs.open(logger.logFile, "a")
     if file then
         file.writeLine(message)
         file.close()
+    end
+end
+
+-- Write to emergency log file (always enabled for critical errors)
+function logger.writeToEmergencyFile(message)
+    if not logger.saveToFile then
+        return -- Even emergency logs respect the file saving setting
+    end
+    
+    local file = fs.open(logger.emergencyLogFile, "a")
+    if file then
+        file.writeLine(message)
+        file.close()
+    end
+end
+
+-- Perform automatic log cleanup
+function logger.performLogCleanup()
+    if not logger.config.auto_cleanup or not logger.config.auto_cleanup.enabled then
+        return
+    end
+    
+    local logsDir = "musicplayer/logs"
+    if not fs.exists(logsDir) then
+        return
+    end
+    
+    local logFiles = {}
+    local files = fs.list(logsDir)
+    
+    -- Collect log files with their modification times
+    for _, filename in ipairs(files) do
+        if filename:match("%.log$") then
+            local filepath = fs.combine(logsDir, filename)
+            local attributes = fs.attributes(filepath)
+            if attributes then
+                table.insert(logFiles, {
+                    name = filename,
+                    path = filepath,
+                    modified = attributes.modified or 0
+                })
+            end
+        end
+    end
+    
+    -- Sort by modification time (newest first)
+    table.sort(logFiles, function(a, b) return a.modified > b.modified end)
+    
+    local maxFiles = logger.config.auto_cleanup.max_log_files or 5
+    local maxAge = (logger.config.auto_cleanup.max_file_age_days or 7) * 24 * 60 * 60 * 1000 -- Convert days to milliseconds
+    local currentTime = os.epoch("utc")
+    local deletedCount = 0
+    
+    -- Delete old files beyond the maximum count
+    for i = maxFiles + 1, #logFiles do
+        fs.delete(logFiles[i].path)
+        deletedCount = deletedCount + 1
+    end
+    
+    -- Delete files older than max age
+    for i = 1, math.min(maxFiles, #logFiles) do
+        local fileAge = currentTime - logFiles[i].modified
+        if fileAge > maxAge then
+            fs.delete(logFiles[i].path)
+            deletedCount = deletedCount + 1
+        end
+    end
+    
+    if deletedCount > 0 then
+        logger.log(logger.LEVELS.INFO, "Logger", "Cleaned up " .. deletedCount .. " old log files")
     end
 end
 
@@ -100,8 +211,10 @@ function logger.log(level, module, message)
     
     local formattedMessage = logger.formatMessage(level, module, message)
     
-    -- Write to file
-    logger.writeToFile(formattedMessage)
+    -- Write to file (only if enabled)
+    if logger.saveToFile then
+        logger.writeToFile(formattedMessage)
+    end
     
     -- Add to buffer
     table.insert(logger.logBuffer, {
@@ -249,6 +362,51 @@ function logger.exportLogs(filename)
         logger.error("Logger", "Failed to export logs to " .. filename)
         return false
     end
+end
+
+-- Get current log level
+function logger.getLevel()
+    return logger.logLevel
+end
+
+-- Get logging configuration
+function logger.getConfig()
+    return logger.config
+end
+
+-- Check if file saving is enabled
+function logger.isFileSavingEnabled()
+    return logger.saveToFile
+end
+
+-- Emergency logging (always logs regardless of level, and always tries to save to emergency file)
+function logger.emergency(module, message)
+    local formattedMessage = logger.formatMessage(logger.LEVELS.FATAL, module, "EMERGENCY: " .. message)
+    
+    -- Always log to buffer regardless of level
+    table.insert(logger.logBuffer, {
+        level = logger.LEVELS.FATAL,
+        module = module,
+        message = "EMERGENCY: " .. message,
+        formatted = formattedMessage,
+        timestamp = os.clock()
+    })
+    
+    -- Write to emergency log file if file saving is enabled
+    if logger.saveToFile then
+        local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+        logger.writeToEmergencyFile(timestamp .. " " .. formattedMessage)
+    end
+    
+    -- Display on log monitor if available
+    if logger.logMonitor then
+        logger.displayOnMonitor(logger.LEVELS.FATAL, formattedMessage)
+    end
+    
+    -- Always display on terminal for emergencies
+    term.setTextColor(colors.red)
+    print("[EMERGENCY] " .. module .. ": " .. message)
+    term.setTextColor(colors.white)
 end
 
 return logger 

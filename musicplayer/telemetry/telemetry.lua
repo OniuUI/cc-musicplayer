@@ -7,13 +7,13 @@ local detector = require("musicplayer/telemetry/system_detector")
 local telemetry = {}
 
 -- Initialize telemetry system
-function telemetry.init(logLevel)
+function telemetry.init(logConfig)
     telemetry.systemInfo = detector.init()
     telemetry.capabilities = detector.getCapabilitiesSummary(telemetry.systemInfo)
     telemetry.monitors = detector.chooseBestMonitors(telemetry.systemInfo)
     
-    -- Initialize logger with chosen log monitor
-    logger.init(telemetry.monitors.logMonitor and telemetry.monitors.logMonitor.peripheral, logLevel)
+    -- Initialize logger with chosen log monitor and config
+    logger.init(telemetry.monitors.logMonitor and telemetry.monitors.logMonitor.peripheral, logConfig)
     
     -- Log system information
     logger.info("Telemetry", "System detection completed")
@@ -30,8 +30,12 @@ function telemetry.init(logLevel)
         logger.info("Telemetry", "Log monitor: " .. telemetry.monitors.logMonitor.side .. " (" .. telemetry.monitors.logMonitor.width .. "x" .. telemetry.monitors.logMonitor.height .. ")")
     end
     
-    -- Generate and save system report
-    telemetry.saveSystemReport()
+    -- Generate and save system report (only if file saving is enabled)
+    if logger.isFileSavingEnabled() then
+        telemetry.saveSystemReport()
+    else
+        logger.info("Telemetry", "System report generation skipped (file saving disabled)")
+    end
     
     return telemetry
 end
@@ -255,14 +259,8 @@ end
 
 -- Emergency logging (always logs regardless of level)
 function telemetry.emergency(module, message)
-    logger.log(logger.LEVELS.FATAL, module, "EMERGENCY: " .. message)
-    
-    -- Also write to emergency log file
-    local emergencyFile = fs.open("musicplayer/logs/emergency.log", "a")
-    if emergencyFile then
-        emergencyFile.writeLine(os.date("%Y-%m-%d %H:%M:%S") .. " [EMERGENCY] [" .. module .. "] " .. message)
-        emergencyFile.close()
-    end
+    -- Use the logger's emergency function which handles all the emergency logging logic
+    logger.emergency(module, message)
     
     -- Display on terminal regardless of current display
     local currentTerm = term.current()
@@ -271,9 +269,8 @@ function telemetry.emergency(module, message)
         -- If restore fails, just continue with current terminal
         logger.debug("Telemetry", "Could not restore terminal for emergency message: " .. tostring(error))
     end
-    term.setTextColor(colors.red)
-    print("[EMERGENCY] " .. module .. ": " .. message)
-    term.setTextColor(colors.white)
+    
+    -- The logger.emergency already prints to terminal, but ensure we're on the right terminal
     if currentTerm ~= term then
         term.redirect(currentTerm)
     end

@@ -8,6 +8,29 @@ config.max_volume = 3.0
 config.chunk_size = 16 * 1024 - 4
 config.initial_read_size = 4
 
+-- Logging Configuration
+config.logging = {
+    -- Enable/disable saving logs to files (set to false to save disk space)
+    save_to_file = true,
+    
+    -- Log level: "DEBUG", "INFO", "WARN", "ERROR", "FATAL"
+    level = "INFO",
+    
+    -- Maximum number of log lines to keep in memory
+    max_buffer_lines = 1000,
+    
+    -- Log file settings (only used if save_to_file is true)
+    session_log_file = "musicplayer/logs/session.log",
+    emergency_log_file = "musicplayer/logs/emergency.log",
+    
+    -- Automatic log cleanup (only if save_to_file is true)
+    auto_cleanup = {
+        enabled = true,
+        max_log_files = 5,  -- Keep only the 5 most recent log files
+        max_file_age_days = 7  -- Delete log files older than 7 days
+    }
+}
+
 -- Branding Configuration
 config.branding = {
     title = "Bognesferga Radio",

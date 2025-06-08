@@ -4,6 +4,7 @@
 -- Import the new core system
 local system = require("musicplayer/core/system")
 local app_manager = require("musicplayer/app_manager")
+local config = require("musicplayer/config")
 
 -- Main application entry point
 local function main()
@@ -47,13 +48,26 @@ local function safeMain()
         print("FATAL ERROR in Bognesferga Radio:")
         print(tostring(error))
         print()
-        print("Please check the log files in musicplayer/logs/")
+        if config.logging.save_to_file then
+            print("Please check the log files in musicplayer/logs/")
+        else
+            print("Log file saving is disabled - check the debug monitor for details")
+        end
         term.setTextColor(colors.white)
         
         -- Try to log the error if telemetry is available
         local telemetrySuccess, telemetry = pcall(require, "musicplayer/telemetry/telemetry")
         if telemetrySuccess and telemetry then
-            local telemetryInstance = telemetry.init("ERROR")
+            -- Use emergency logging config for fatal errors
+            local emergencyLogConfig = {
+                save_to_file = true, -- Always save emergency logs
+                level = "ERROR",
+                max_buffer_lines = 100,
+                session_log_file = config.logging.session_log_file,
+                emergency_log_file = config.logging.emergency_log_file,
+                auto_cleanup = { enabled = false } -- Don't cleanup during emergency
+            }
+            local telemetryInstance = telemetry.init(emergencyLogConfig)
             if telemetryInstance then
                 telemetryInstance.emergency("Fatal", tostring(error))
             end
