@@ -81,7 +81,8 @@ local function confirmUninstall()
         "  │   ├── ui/components.lua",
         "  │   └── ui/layouts/",
         "  ├── Audio system:",
-        "  │   └── audio/speaker_manager.lua",
+        "  │   ├── audio/speaker_manager.lua",
+        "  │   └── audio/audio_processor.lua",
         "  ├── Network system:",
         "  │   └── network/http_client.lua",
         "  ├── Utilities:",
@@ -102,7 +103,10 @@ local function confirmUninstall()
         "  └── Log files:",
         "      ├── logs/session.log",
         "      ├── logs/emergency.log",
-        "      └── logs/export_*.log"
+        "      └── logs/export_*.log",
+        "Configuration utilities:",
+        "  ├── configure_logging.lua",
+        "  └── configure_audio.lua"
     }
     
     for _, file in ipairs(filesToRemove) do
@@ -140,6 +144,7 @@ local function removeFiles()
         "musicplayer/network/http_client.lua",
         "musicplayer/network/radio_protocol.lua",
         "musicplayer/audio/speaker_manager.lua",
+        "musicplayer/audio/audio_processor.lua",
         "musicplayer/ui/themes.lua",
         "musicplayer/ui/components.lua",
         "musicplayer/ui/layouts/radio.lua",
@@ -149,7 +154,11 @@ local function removeFiles()
         "musicplayer/features/radio/radio_host.lua",
         "musicplayer/telemetry/telemetry.lua",
         "musicplayer/telemetry/logger.lua",
-        "musicplayer/telemetry/system_detector.lua"
+        "musicplayer/telemetry/system_detector.lua",
+        
+        -- Configuration utilities
+        "configure_logging.lua",
+        "configure_audio.lua"
     }
     
     local removedCount = 0

@@ -155,6 +155,7 @@ local function getFileList()
         
         -- Audio modules
         {name = "speaker_manager.lua", url = baseUri .. "musicplayer/audio/speaker_manager.lua", path = "musicplayer/audio/speaker_manager.lua"},
+        {name = "audio_processor.lua", url = baseUri .. "musicplayer/audio/audio_processor.lua", path = "musicplayer/audio/audio_processor.lua"},
         
         -- Network modules
         {name = "http_client.lua", url = baseUri .. "musicplayer/network/http_client.lua", path = "musicplayer/network/http_client.lua"},
@@ -178,7 +179,11 @@ local function getFileList()
         -- Telemetry modules
         {name = "telemetry.lua", url = baseUri .. "musicplayer/telemetry/telemetry.lua", path = "musicplayer/telemetry/telemetry.lua"},
         {name = "logger.lua", url = baseUri .. "musicplayer/telemetry/logger.lua", path = "musicplayer/telemetry/logger.lua"},
-        {name = "system_detector.lua", url = baseUri .. "musicplayer/telemetry/system_detector.lua", path = "musicplayer/telemetry/system_detector.lua"}
+        {name = "system_detector.lua", url = baseUri .. "musicplayer/telemetry/system_detector.lua", path = "musicplayer/telemetry/system_detector.lua"},
+        
+        -- Configuration utilities
+        {name = "configure_logging.lua", url = baseUri .. "configure_logging.lua", path = "configure_logging.lua"},
+        {name = "configure_audio.lua", url = baseUri .. "configure_audio.lua", path = "configure_audio.lua"}
     }
 end
 
