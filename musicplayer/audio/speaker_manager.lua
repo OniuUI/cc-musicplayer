@@ -3,6 +3,7 @@
 
 local config = require("musicplayer/config")
 local common = require("musicplayer/utils/common")
+local audioProcessor = require("musicplayer/audio/audio_processor")
 
 local speakerManager = {}
 
@@ -15,6 +16,13 @@ function speakerManager.init(errorHandler, telemetry)
     speakerManager.isPlaying = false
     speakerManager.currentVolume = config.default_volume
     
+    -- Initialize audio processor with config defaults
+    speakerManager.audioProcessor = audioProcessor.init(speakerManager.logger)
+    speakerManager.audioProcessor.setVolume(speakerManager.currentVolume)
+    speakerManager.audioProcessor.setBass(config.audio.default_bass)
+    speakerManager.audioProcessor.setTreble(config.audio.default_treble)
+    speakerManager.audioProcessor.setEnabled(config.audio.processing_enabled)
+    
     -- Audio processing state (from working original)
     speakerManager.decoder = require("cc.audio.dfpwm").make_decoder()
     speakerManager.buffer = nil
@@ -23,7 +31,10 @@ function speakerManager.init(errorHandler, telemetry)
     speakerManager.detectSpeakers()
     
     if speakerManager.logger then
-        speakerManager.logger.info("SpeakerManager", "Speaker manager initialized with " .. #speakerManager.speakers .. " speakers")
+        speakerManager.logger.info("SpeakerManager", "Speaker manager initialized with " .. #speakerManager.speakers .. " speakers and audio processing")
+        speakerManager.logger.info("SpeakerManager", "Audio defaults: Bass=" .. config.audio.default_bass .. 
+                                  ", Treble=" .. config.audio.default_treble .. 
+                                  ", Processing=" .. (config.audio.processing_enabled and "enabled" or "disabled"))
     end
     
     return speakerManager
@@ -75,7 +86,7 @@ function speakerManager.hasActiveSpeakers()
     return speakerManager.getActiveSpeakerCount() > 0
 end
 
--- Play audio buffer on all active speakers
+-- Play audio buffer on all active speakers with audio processing
 function speakerManager.playAudio(buffer, volume)
     if not speakerManager.hasActiveSpeakers() then
         if speakerManager.errorHandler then
@@ -87,13 +98,21 @@ function speakerManager.playAudio(buffer, volume)
     volume = volume or speakerManager.currentVolume
     volume = common.clamp(volume, 0, config.max_volume)
     
+    -- Apply audio processing if enabled
+    local processedBuffer = buffer
+    if speakerManager.audioProcessor and speakerManager.audioProcessor.isEnabled() then
+        speakerManager.audioProcessor.setVolume(volume)
+        processedBuffer = speakerManager.audioProcessor.processBuffer(buffer)
+        volume = 1.0 -- Use volume 1.0 since we pre-processed
+    end
+    
     -- Create speaker functions for parallel execution
     local speakerFunctions = {}
     
     for i, speaker in ipairs(speakerManager.speakers) do
         if speaker.isActive then
             speakerFunctions[i] = function()
-                return speakerManager.playSpeakerAudio(speaker, buffer, volume)
+                return speakerManager.playSpeakerAudio(speaker, processedBuffer, volume)
             end
         end
     end
@@ -112,7 +131,7 @@ function speakerManager.playAudio(buffer, volume)
 end
 
 -- Enhanced audio processing from working original
--- Process and play DFPWM audio chunk with proper synchronization
+-- Process and play DFPWM audio chunk with proper synchronization and audio processing
 function speakerManager.playDFPWMChunk(chunk, volume, playingId, isPlaying)
     if not speakerManager.hasActiveSpeakers() then
         return false
@@ -123,6 +142,17 @@ function speakerManager.playDFPWMChunk(chunk, volume, playingId, isPlaying)
     
     -- Decode the chunk
     speakerManager.buffer = speakerManager.decoder(chunk)
+    
+    -- Apply audio processing (bass, treble, volume)
+    if speakerManager.audioProcessor and speakerManager.audioProcessor.isEnabled() then
+        speakerManager.audioProcessor.setVolume(volume)
+        speakerManager.buffer = speakerManager.audioProcessor.processBuffer(speakerManager.buffer)
+    else
+        -- Apply volume manually if audio processing is disabled
+        for i = 1, #speakerManager.buffer do
+            speakerManager.buffer[i] = common.clamp(speakerManager.buffer[i] * volume, -128, 127)
+        end
+    end
     
     -- Create speaker functions for parallel execution (from working original)
     local speakerFunctions = {}
@@ -135,7 +165,7 @@ function speakerManager.playDFPWMChunk(chunk, volume, playingId, isPlaying)
                 
                 if #speakerManager.speakers > 1 then
                     -- Multiple speakers: wait for audio buffer to be consumed
-                    if speaker.playAudio(speakerManager.buffer, volume) then
+                    if speaker.playAudio(speakerManager.buffer, 1.0) then -- Use volume 1.0 since we pre-processed
                         parallel.waitForAny(
                             function()
                                 repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
@@ -150,9 +180,9 @@ function speakerManager.playDFPWMChunk(chunk, volume, playingId, isPlaying)
                             return
                         end
                     end
-                else
+                
                     -- Single speaker: retry until buffer is accepted
-                    while not speaker.playAudio(speakerManager.buffer, volume) do
+                    while not speaker.playAudio(speakerManager.buffer, 1.0) do -- Use volume 1.0 since we pre-processed
                         parallel.waitForAny(
                             function()
                                 repeat until select(2, os.pullEvent("speaker_audio_empty")) == name
@@ -293,10 +323,15 @@ function speakerManager.getRawSpeakers()
     return rawSpeakers
 end
 
--- Set volume for all speakers
+-- Set volume for all speakers and audio processor
 function speakerManager.setVolume(volume)
     volume = common.clamp(volume, 0, config.max_volume)
     speakerManager.currentVolume = volume
+    
+    -- Update audio processor volume
+    if speakerManager.audioProcessor then
+        speakerManager.audioProcessor.setVolume(volume)
+    end
     
     if speakerManager.logger then
         speakerManager.logger.debug("SpeakerManager", "Volume set to " .. volume)
@@ -377,7 +412,7 @@ function speakerManager.reactivateSpeakers()
     return reactivated
 end
 
--- Get speaker status
+-- Get speaker status with audio processing info
 function speakerManager.getStatus()
     local healthReport = speakerManager.checkSpeakerHealth()
     
@@ -385,7 +420,8 @@ function speakerManager.getStatus()
         isPlaying = speakerManager.isPlaying,
         volume = speakerManager.currentVolume,
         maxVolume = config.max_volume,
-        health = healthReport
+        health = healthReport,
+        audioProcessing = speakerManager.getAudioSettings()
     }
 end
 
@@ -397,6 +433,96 @@ end
 -- Get playing state
 function speakerManager.isCurrentlyPlaying()
     return speakerManager.isPlaying
+end
+
+-- Set bass level (-10 to +10)
+function speakerManager.setBass(level)
+    if speakerManager.audioProcessor then
+        speakerManager.audioProcessor.setBass(level)
+        if speakerManager.logger then
+            speakerManager.logger.info("SpeakerManager", "Bass set to " .. level)
+        end
+    end
+end
+
+-- Set treble level (-10 to +10)
+function speakerManager.setTreble(level)
+    if speakerManager.audioProcessor then
+        speakerManager.audioProcessor.setTreble(level)
+        if speakerManager.logger then
+            speakerManager.logger.info("SpeakerManager", "Treble set to " .. level)
+        end
+    end
+end
+
+-- Get bass level
+function speakerManager.getBass()
+    if speakerManager.audioProcessor then
+        return speakerManager.audioProcessor.getBass()
+    end
+    return 0
+end
+
+-- Get treble level
+function speakerManager.getTreble()
+    if speakerManager.audioProcessor then
+        return speakerManager.audioProcessor.getTreble()
+    end
+    return 0
+end
+
+-- Enable/disable audio processing
+function speakerManager.setAudioProcessingEnabled(enabled)
+    if speakerManager.audioProcessor then
+        speakerManager.audioProcessor.setEnabled(enabled)
+        if speakerManager.logger then
+            speakerManager.logger.info("SpeakerManager", "Audio processing " .. (enabled and "enabled" or "disabled"))
+        end
+    end
+end
+
+-- Check if audio processing is enabled
+function speakerManager.isAudioProcessingEnabled()
+    if speakerManager.audioProcessor then
+        return speakerManager.audioProcessor.isEnabled()
+    end
+    return false
+end
+
+-- Reset audio filters (useful when changing songs)
+function speakerManager.resetAudioFilters()
+    if speakerManager.audioProcessor then
+        speakerManager.audioProcessor.resetFilters()
+    end
+end
+
+-- Get audio processor settings
+function speakerManager.getAudioSettings()
+    if speakerManager.audioProcessor then
+        return speakerManager.audioProcessor.getSettings()
+    end
+    return {
+        bass = 0,
+        treble = 0,
+        volume = speakerManager.currentVolume,
+        enabled = false
+    }
+end
+
+-- Load audio processor settings
+function speakerManager.loadAudioSettings(settings)
+    if speakerManager.audioProcessor then
+        speakerManager.audioProcessor.loadSettings(settings)
+    end
+end
+
+-- Get formatted audio settings string for display
+function speakerManager.getAudioDisplayString()
+    if speakerManager.audioProcessor then
+        return speakerManager.audioProcessor.getDisplayString()
+    end
+    local volume = math.floor((speakerManager.currentVolume / 3.0) * 100)
+    return string.format("Vol: %d%% | Bass: 0 | Treble: 0", volume)
 end
 
 return speakerManager 

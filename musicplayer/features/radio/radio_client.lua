@@ -461,17 +461,83 @@ function radioClient.drawNowPlaying(state)
     term.setBackgroundColor(colors.gray)
     term.write("]")
     
-    -- Station playlist (if available)
+    -- Bass and Treble Controls
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.yellow)
+    term.setCursorPos(3, 16)
+    term.write("Audio Controls:")
+    
+    -- Bass control
+    term.setCursorPos(3, 17)
+    term.setTextColor(colors.white)
+    term.write("Bass: ")
+    
+    local bassLevel = state.speakerManager.getBass()
+    local bassStr = bassLevel > 0 and ("+" .. bassLevel) or tostring(bassLevel)
+    term.setTextColor(colors.cyan)
+    term.write(bassStr)
+    
+    -- Bass adjustment buttons
+    term.setBackgroundColor(colors.red)
+    term.setTextColor(colors.white)
+    term.setCursorPos(15, 17)
+    term.write(" - ")
+    
+    term.setBackgroundColor(colors.lime)
+    term.setTextColor(colors.black)
+    term.setCursorPos(19, 17)
+    term.write(" + ")
+    
+    -- Treble control
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.white)
+    term.setCursorPos(25, 17)
+    term.write("Treble: ")
+    
+    local trebleLevel = state.speakerManager.getTreble()
+    local trebleStr = trebleLevel > 0 and ("+" .. trebleLevel) or tostring(trebleLevel)
+    term.setTextColor(colors.cyan)
+    term.write(trebleStr)
+    
+    -- Treble adjustment buttons
+    term.setBackgroundColor(colors.red)
+    term.setTextColor(colors.white)
+    term.setCursorPos(40, 17)
+    term.write(" - ")
+    
+    term.setBackgroundColor(colors.lime)
+    term.setTextColor(colors.black)
+    term.setCursorPos(44, 17)
+    term.write(" + ")
+    
+    -- Audio processing toggle
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.lightGray)
+    term.setCursorPos(3, 18)
+    term.write("Audio Processing: ")
+    
+    if state.speakerManager.isAudioProcessingEnabled() then
+        term.setBackgroundColor(colors.lime)
+        term.setTextColor(colors.black)
+        term.write(" ON ")
+    else
+        term.setBackgroundColor(colors.red)
+        term.setTextColor(colors.white)
+        term.write(" OFF ")
+    end
+    
+    -- Station playlist (if available) - moved down to accommodate audio controls
+    local playlistStartY = 20
     if #state.playlist > 0 then
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.yellow)
-        term.setCursorPos(3, 16)
+        term.setCursorPos(3, playlistStartY)
         term.write("Station Playlist:")
         
-        local maxShow = math.min(5, #state.playlist)
+        local maxShow = math.min(4, #state.playlist) -- Reduced to fit audio controls
         for i = 1, maxShow do
             local song = state.playlist[i]
-            local y = 16 + i
+            local y = playlistStartY + i
             
             -- Highlight current song
             if i == state.current_song_index then
@@ -498,11 +564,11 @@ function radioClient.drawNowPlaying(state)
             term.write(prefix .. songName .. " - " .. artistName .. string.rep(" ", 43 - #songName - #artistName))
         end
         
-        if #state.playlist > 5 then
+        if #state.playlist > 4 then
             term.setBackgroundColor(colors.black)
             term.setTextColor(colors.lightGray)
-            term.setCursorPos(3, 22)
-            term.write("... and " .. (#state.playlist - 5) .. " more songs")
+            term.setCursorPos(3, playlistStartY + 5)
+            term.write("... and " .. (#state.playlist - 4) .. " more songs")
         end
     end
     
@@ -613,6 +679,7 @@ function radioClient.handleNowPlayingClicks(state, x, y, speakers)
         local sliderPos = x - 4
         local newVolume = (sliderPos / 20) * 3.0
         state.volume = math.max(0, math.min(3.0, newVolume))
+        state.speakerManager.setVolume(state.volume)
         state.logger.info("RadioClient", "Volume set to " .. state.volume)
         return
     end
@@ -621,6 +688,40 @@ function radioClient.handleNowPlayingClicks(state, x, y, speakers)
     if y == 13 and x >= 17 and x <= 25 then
         state.muted = not state.muted
         state.logger.info("RadioClient", "Audio " .. (state.muted and "muted" or "unmuted"))
+        return
+    end
+    
+    -- Bass and Treble controls
+    if y == 17 then
+        -- Bass controls
+        if x >= 15 and x < 18 then -- Bass minus button
+            local currentBass = state.speakerManager.getBass()
+            state.speakerManager.setBass(currentBass - 1)
+            state.logger.info("RadioClient", "Bass decreased to " .. state.speakerManager.getBass())
+        elseif x >= 19 and x < 22 then -- Bass plus button
+            local currentBass = state.speakerManager.getBass()
+            state.speakerManager.setBass(currentBass + 1)
+            state.logger.info("RadioClient", "Bass increased to " .. state.speakerManager.getBass())
+        end
+        
+        -- Treble controls
+        if x >= 40 and x < 43 then -- Treble minus button
+            local currentTreble = state.speakerManager.getTreble()
+            state.speakerManager.setTreble(currentTreble - 1)
+            state.logger.info("RadioClient", "Treble decreased to " .. state.speakerManager.getTreble())
+        elseif x >= 44 and x < 47 then -- Treble plus button
+            local currentTreble = state.speakerManager.getTreble()
+            state.speakerManager.setTreble(currentTreble + 1)
+            state.logger.info("RadioClient", "Treble increased to " .. state.speakerManager.getTreble())
+        end
+        return
+    end
+    
+    -- Audio processing toggle
+    if y == 18 and x >= 21 and x < 26 then
+        local currentEnabled = state.speakerManager.isAudioProcessingEnabled()
+        state.speakerManager.setAudioProcessingEnabled(not currentEnabled)
+        state.logger.info("RadioClient", "Audio processing " .. (not currentEnabled and "enabled" or "disabled"))
         return
     end
 end

@@ -344,28 +344,94 @@ function youtubePlayer.drawNowPlaying(state)
     term.setTextColor(colors.yellow)
     term.write(math.floor(100 * (state.volume / 3) + 0.5) .. "%")
 
+    -- Bass and Treble Controls
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.yellow)
+    term.setCursorPos(3, 15)
+    term.write("Audio Controls:")
+    
+    -- Bass control
+    term.setCursorPos(3, 16)
+    term.setTextColor(colors.white)
+    term.write("Bass: ")
+    
+    local bassLevel = state.speakerManager.getBass()
+    local bassStr = bassLevel > 0 and ("+" .. bassLevel) or tostring(bassLevel)
+    term.setTextColor(colors.cyan)
+    term.write(bassStr)
+    
+    -- Bass adjustment buttons
+    term.setBackgroundColor(colors.red)
+    term.setTextColor(colors.white)
+    term.setCursorPos(15, 16)
+    term.write(" - ")
+    
+    term.setBackgroundColor(colors.lime)
+    term.setTextColor(colors.black)
+    term.setCursorPos(19, 16)
+    term.write(" + ")
+    
+    -- Treble control
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.white)
+    term.setCursorPos(25, 16)
+    term.write("Treble: ")
+    
+    local trebleLevel = state.speakerManager.getTreble()
+    local trebleStr = trebleLevel > 0 and ("+" .. trebleLevel) or tostring(trebleLevel)
+    term.setTextColor(colors.cyan)
+    term.write(trebleStr)
+    
+    -- Treble adjustment buttons
+    term.setBackgroundColor(colors.red)
+    term.setTextColor(colors.white)
+    term.setCursorPos(40, 16)
+    term.write(" - ")
+    
+    term.setBackgroundColor(colors.lime)
+    term.setTextColor(colors.black)
+    term.setCursorPos(44, 16)
+    term.write(" + ")
+    
+    -- Audio processing toggle
+    term.setBackgroundColor(colors.black)
+    term.setTextColor(colors.lightGray)
+    term.setCursorPos(3, 17)
+    term.write("Audio Processing: ")
+    
+    if state.speakerManager.isAudioProcessingEnabled() then
+        term.setBackgroundColor(colors.lime)
+        term.setTextColor(colors.black)
+        term.write(" ON ")
+    else
+        term.setBackgroundColor(colors.red)
+        term.setTextColor(colors.white)
+        term.write(" OFF ")
+    end
+
     -- Queue with beautiful styling and yellow accent
+    local queueStartY = 19
     if #state.queue > 0 then
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.yellow)
-        term.setCursorPos(3, 15)
+        term.setCursorPos(3, queueStartY)
         term.write("Queue (" .. #state.queue .. " songs):")
         
         for i = 1, #state.queue do
-            if 16 + (i-1)*2 >= state.height - 3 then break end
+            if queueStartY + 1 + (i-1)*2 >= state.height - 3 then break end
             term.setTextColor(colors.white)
-            term.setCursorPos(3, 16 + (i-1)*2)
+            term.setCursorPos(3, queueStartY + 1 + (i-1)*2)
             term.write(i .. ". " .. state.queue[i].name)
             term.setTextColor(colors.lightGray)
-            term.setCursorPos(3, 17 + (i-1)*2)
+            term.setCursorPos(3, queueStartY + 2 + (i-1)*2)
             term.write("   " .. state.queue[i].artist)
         end
     else
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.lightGray)
-        term.setCursorPos(3, 15)
+        term.setCursorPos(3, queueStartY)
         term.write("Queue is empty")
-        term.setCursorPos(3, 16)
+        term.setCursorPos(3, queueStartY + 1)
         term.write("Add songs from the Search tab")
     end
 end
@@ -762,51 +828,30 @@ function youtubePlayer.uiLoop(state, speakers)
                                             state.is_loading = false
                                             state.is_error = false
                                             os.queueEvent("audio_update")
-                                        elseif state.now_playing ~= nil then
-                                            state.playing_id = nil
-                                            state.playing = true
-                                            state.is_error = false
-                                            os.queueEvent("audio_update")
-                                        elseif #state.queue > 0 then
-                                            state.now_playing = state.queue[1]
-                                            table.remove(state.queue, 1)
-                                            state.playing_id = nil
-                                            state.playing = true
-                                            state.is_error = false
-                                            os.queueEvent("audio_update")
+                                        else
+                                            if state.now_playing ~= nil then
+                                                state.playing = true
+                                                state.needs_next_chunk = 1
+                                                os.queueEvent("audio_update")
+                                            elseif #state.queue > 0 then
+                                                state.now_playing = table.remove(state.queue, 1)
+                                                state.playing = true
+                                                state.needs_next_chunk = 1
+                                                -- Reset audio filters when starting new song
+                                                state.speakerManager.resetAudioFilters()
+                                                os.queueEvent("audio_update")
+                                            end
                                         end
                                     end
             
                                     -- Skip button (updated coordinates)
                                     if x >= 13 and x < 22 then
-                                        if state.now_playing ~= nil or #state.queue > 0 then
-                                            term.setBackgroundColor(colors.white)
-                                            term.setTextColor(colors.black)
-                                            term.setCursorPos(13, 10)
-                                            term.write(" ⏭ Skip ")
-                                            sleep(0.2)
-
-                                            state.is_error = false
-                                            if state.playing then
-                                                for _, speaker in ipairs(speakers) do
-                                                    speaker.stop()
-                                                    os.queueEvent("playback_stopped")
-                                                end
-                                            end
-                                            if #state.queue > 0 then
-                                                if state.looping == 1 then
-                                                    table.insert(state.queue, state.now_playing)
-                                                end
-                                                state.now_playing = state.queue[1]
-                                                table.remove(state.queue, 1)
-                                                state.playing_id = nil
-                                            else
-                                                state.now_playing = nil
-                                                state.playing = false
-                                                state.is_loading = false
-                                                state.is_error = false
-                                                state.playing_id = nil
-                                            end
+                                        if #state.queue > 0 then
+                                            state.now_playing = table.remove(state.queue, 1)
+                                            state.playing = true
+                                            state.needs_next_chunk = 1
+                                            -- Reset audio filters when skipping to new song
+                                            state.speakerManager.resetAudioFilters()
                                             os.queueEvent("audio_update")
                                         end
                                     end
@@ -829,6 +874,33 @@ function youtubePlayer.uiLoop(state, speakers)
                                         state.volume = (x - 3) / 24 * 3.0
                                         state.speakerManager.setVolume(state.volume)
                                     end
+                                end
+                                
+                                -- Bass and Treble controls
+                                if y == 16 then
+                                    -- Bass controls
+                                    if x >= 15 and x < 18 then -- Bass minus button
+                                        local currentBass = state.speakerManager.getBass()
+                                        state.speakerManager.setBass(currentBass - 1)
+                                    elseif x >= 19 and x < 22 then -- Bass plus button
+                                        local currentBass = state.speakerManager.getBass()
+                                        state.speakerManager.setBass(currentBass + 1)
+                                    end
+                                    
+                                    -- Treble controls
+                                    if x >= 40 and x < 43 then -- Treble minus button
+                                        local currentTreble = state.speakerManager.getTreble()
+                                        state.speakerManager.setTreble(currentTreble - 1)
+                                    elseif x >= 44 and x < 47 then -- Treble plus button
+                                        local currentTreble = state.speakerManager.getTreble()
+                                        state.speakerManager.setTreble(currentTreble + 1)
+                                    end
+                                end
+                                
+                                -- Audio processing toggle
+                                if y == 17 and x >= 21 and x < 26 then
+                                    local currentEnabled = state.speakerManager.isAudioProcessingEnabled()
+                                    state.speakerManager.setAudioProcessingEnabled(not currentEnabled)
                                 end
                             end
                             

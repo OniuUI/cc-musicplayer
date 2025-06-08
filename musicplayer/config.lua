@@ -78,4 +78,20 @@ config.ui = {
     }
 }
 
+-- Audio processing configuration
+config.audio = {
+    -- Audio processing settings
+    processing_enabled = true,  -- Enable/disable audio processing by default
+    default_bass = 0,          -- Default bass level (-10 to +10)
+    default_treble = 0,        -- Default treble level (-10 to +10)
+    
+    -- Audio quality settings
+    enable_filters = true,     -- Enable bass/treble filtering
+    filter_quality = "medium", -- "low", "medium", "high" (affects CPU usage)
+    
+    -- Volume settings
+    normalize_volume = true,   -- Normalize volume across different audio sources
+    dynamic_range = true       -- Preserve dynamic range in audio processing
+}
+
 return config 
