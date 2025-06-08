@@ -827,6 +827,11 @@ function radioClient.disconnectFromStation(state)
     
     state.logger.info("RadioClient", "Disconnecting from station")
     
+    -- CLEAR AUDIO STOP LOG
+    term.setTextColor(colors.red)
+    print("🔌 AUDIO STOPPED: Disconnecting from station")
+    term.setTextColor(colors.white)
+    
     -- Send leave request
     local leaveRequest = {
         type = "leave_request",
@@ -908,8 +913,16 @@ function radioClient.audioLoop(state, speakers)
                 
                 if state.connected then
                     state.logger.error("RadioClient", "Radio audio stream request failed for: " .. (state.now_playing and state.now_playing.name or "Unknown"))
+                    -- CLEAR AUDIO STOP LOG
+                    term.setTextColor(colors.red)
+                    print("🔴 AUDIO STOPPED: HTTP request failed for radio song - " .. (state.now_playing and state.now_playing.name or "Unknown"))
+                    term.setTextColor(colors.white)
                 else
                     state.logger.error("RadioClient", "Local audio stream request failed")
+                    -- CLEAR AUDIO STOP LOG
+                    term.setTextColor(colors.red)
+                    print("🔴 AUDIO STOPPED: HTTP request failed for local song")
+                    term.setTextColor(colors.white)
                 end
                 
                 os.queueEvent("redraw_screen")
@@ -976,10 +989,19 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
     -- Check if we have a valid player handle
     if not state.player_handle then
         state.logger.error("RadioClient", "playLocalAudio called but player_handle is nil")
+        -- CLEAR AUDIO STOP LOG
+        term.setTextColor(colors.red)
+        print("🔴 AUDIO STOPPED: No player handle available")
+        term.setTextColor(colors.white)
         state.is_playing_audio = false
         state.needs_next_chunk = 0
         return
     end
+    
+    -- CLEAR AUDIO START LOG
+    term.setTextColor(colors.lime)
+    print("🎵 AUDIO STARTED: Playing " .. (state.now_playing and state.now_playing.name or "Unknown"))
+    term.setTextColor(colors.white)
     
     -- Simple audio playback - no more aggressive skipping
     while true do
@@ -988,8 +1010,16 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
             -- Song finished naturally
             if state.connected then
                 state.logger.info("RadioClient", "Radio song finished")
+                -- CLEAR AUDIO STOP LOG
+                term.setTextColor(colors.yellow)
+                print("🎵 AUDIO STOPPED: Song finished naturally - " .. (state.now_playing and state.now_playing.name or "Unknown"))
+                term.setTextColor(colors.white)
             else
                 state.logger.info("RadioClient", "Local song finished")
+                -- CLEAR AUDIO STOP LOG
+                term.setTextColor(colors.yellow)
+                print("🎵 AUDIO STOPPED: Local song finished")
+                term.setTextColor(colors.white)
             end
             
             if state.player_handle then
@@ -1008,6 +1038,10 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
             -- Only skip chunks if we're not allowed to play (major sync correction in progress)
             if not state.allow_playback then
                 state.logger.debug("RadioClient", "Skipping chunk during sync correction")
+                -- CLEAR AUDIO SKIP LOG
+                term.setTextColor(colors.orange)
+                print("⏸️ AUDIO SKIPPING: Sync correction in progress")
+                term.setTextColor(colors.white)
                 goto continue_skip
             end
             
@@ -1036,10 +1070,18 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                                         end,
                                         function()
                                             local event = os.pullEvent("playback_stopped")
+                                            -- CLEAR AUDIO STOP LOG
+                                            term.setTextColor(colors.red)
+                                            print("🔴 AUDIO STOPPED: Playback stopped event received")
+                                            term.setTextColor(colors.white)
                                             return
                                         end
                                     )
                                     if not state.playing or state.playing_id ~= thisnowplayingid then
+                                        -- CLEAR AUDIO STOP LOG
+                                        term.setTextColor(colors.red)
+                                        print("🔴 AUDIO STOPPED: State changed - Playing: " .. tostring(state.playing) .. ", ID match: " .. tostring(state.playing_id == thisnowplayingid))
+                                        term.setTextColor(colors.white)
                                         return
                                     end
                                 end
@@ -1051,15 +1093,27 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                                         end,
                                         function()
                                             local event = os.pullEvent("playback_stopped")
+                                            -- CLEAR AUDIO STOP LOG
+                                            term.setTextColor(colors.red)
+                                            print("🔴 AUDIO STOPPED: Playback stopped event received")
+                                            term.setTextColor(colors.white)
                                             return
                                         end
                                     )
                                     if not state.playing or state.playing_id ~= thisnowplayingid then
+                                        -- CLEAR AUDIO STOP LOG
+                                        term.setTextColor(colors.red)
+                                        print("🔴 AUDIO STOPPED: State changed - Playing: " .. tostring(state.playing) .. ", ID match: " .. tostring(state.playing_id == thisnowplayingid))
+                                        term.setTextColor(colors.white)
                                         return
                                     end
                                 end
                             end
                             if not state.playing or state.playing_id ~= thisnowplayingid then
+                                -- CLEAR AUDIO STOP LOG
+                                term.setTextColor(colors.red)
+                                print("🔴 AUDIO STOPPED: Final state check failed - Playing: " .. tostring(state.playing) .. ", ID match: " .. tostring(state.playing_id == thisnowplayingid))
+                                term.setTextColor(colors.white)
                                 return
                             end
                         end
@@ -1068,6 +1122,10 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
                     local ok, err = pcall(parallel.waitForAll, table.unpack(fn))
                     if not ok then
                         state.logger.error("RadioClient", "Audio playback error: " .. tostring(err))
+                        -- CLEAR AUDIO STOP LOG
+                        term.setTextColor(colors.red)
+                        print("🔴 AUDIO STOPPED: Playback error - " .. tostring(err))
+                        term.setTextColor(colors.white)
                         state.needs_next_chunk = 2
                         state.is_error = true
                         break
@@ -1085,10 +1143,19 @@ function radioClient.playLocalAudio(state, speakers, thisnowplayingid)
             
             -- Exit if playback stopped
             if not state.playing or state.playing_id ~= thisnowplayingid then
+                -- CLEAR AUDIO STOP LOG
+                term.setTextColor(colors.red)
+                print("🔴 AUDIO STOPPED: Loop exit condition - Playing: " .. tostring(state.playing) .. ", ID match: " .. tostring(state.playing_id == thisnowplayingid))
+                term.setTextColor(colors.white)
                 break
             end
         end
     end
+    
+    -- CLEAR AUDIO STOP LOG
+    term.setTextColor(colors.yellow)
+    print("🎵 AUDIO ENDED: playLocalAudio function completed")
+    term.setTextColor(colors.white)
     
     os.queueEvent("audio_update")
 end
@@ -1268,6 +1335,11 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
     if data.type == "song_change" then
         state.logger.info("RadioClient", "Host changed song: " .. (data.now_playing and data.now_playing.name or "Unknown"))
         
+        -- CLEAR AUDIO STOP LOG
+        term.setTextColor(colors.cyan)
+        print("🔄 AUDIO STOPPED: Host changed song to " .. (data.now_playing and data.now_playing.name or "Unknown"))
+        term.setTextColor(colors.white)
+        
         -- Stop current audio to prevent overlap
         if state.player_handle then
             state.player_handle.close()
@@ -1300,6 +1372,10 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         -- Start streaming the new song
         if state.playing and state.now_playing then
             state.logger.info("RadioClient", "Starting new song from host: " .. state.now_playing.name)
+            -- CLEAR AUDIO START LOG
+            term.setTextColor(colors.lime)
+            print("🎵 AUDIO STARTING: New song from host - " .. state.now_playing.name)
+            term.setTextColor(colors.white)
             os.queueEvent("audio_update")
         end
         
@@ -1314,6 +1390,11 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         end
         
         if not state.playing then
+            -- CLEAR AUDIO STOP LOG
+            term.setTextColor(colors.orange)
+            print("⏸️ AUDIO STOPPED: Host paused playback")
+            term.setTextColor(colors.white)
+            
             -- Stop speakers when host pauses
             local speakers = state.speakerManager.getRawSpeakers()
             for _, speaker in ipairs(speakers) do
@@ -1324,6 +1405,10 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
             -- Start playing when host resumes
             state.allow_playback = true
             state.logger.info("RadioClient", "Host resumed - triggering audio update")
+            -- CLEAR AUDIO START LOG
+            term.setTextColor(colors.lime)
+            print("▶️ AUDIO STARTING: Host resumed playback - " .. (state.now_playing and state.now_playing.name or "Unknown"))
+            term.setTextColor(colors.white)
             os.queueEvent("audio_update")
         end
         
@@ -1348,6 +1433,11 @@ function radioClient.handleNetworkMessage(state, data, replyChannel)
         
     elseif data.type == "broadcast_end" then
         state.logger.info("RadioClient", "Host ended broadcast")
+        
+        -- CLEAR AUDIO STOP LOG
+        term.setTextColor(colors.red)
+        print("📻 AUDIO STOPPED: Host ended broadcast")
+        term.setTextColor(colors.white)
         
         -- Stop audio but don't disconnect - stay connected for when broadcast resumes
         if state.player_handle then
@@ -1385,6 +1475,11 @@ function radioClient.handleSyncStatus(state, data)
     if data.playback_session and data.playback_session ~= state.current_playback_session then
         state.logger.info("RadioClient", "New playback session detected: " .. data.playback_session)
         
+        -- CLEAR AUDIO STOP LOG
+        term.setTextColor(colors.cyan)
+        print("🔄 AUDIO STOPPED: New playback session - " .. data.playback_session)
+        term.setTextColor(colors.white)
+        
         -- Reset sync tracking for new session
         state.sync_drift_samples = {}
         state.allow_playback = true
@@ -1411,6 +1506,10 @@ function radioClient.handleSyncStatus(state, data)
             state.host_song_start_time = data.playback_start_time or currentTime
             
             state.logger.info("RadioClient", "Starting new session: " .. data.now_playing.name)
+            -- CLEAR AUDIO START LOG
+            term.setTextColor(colors.lime)
+            print("🎵 AUDIO STARTING: New session - " .. data.now_playing.name)
+            term.setTextColor(colors.white)
             os.queueEvent("audio_update")
         end
         
@@ -1458,6 +1557,11 @@ function radioClient.handleSyncStatus(state, data)
             if math.abs(average_drift) > state.major_sync_threshold then
                 state.logger.warn("RadioClient", "Major sync drift detected (" .. string.format("%.1f", average_drift) .. "s) - restarting audio at song change")
                 
+                -- CLEAR AUDIO STOP LOG
+                term.setTextColor(colors.magenta)
+                print("🔄 AUDIO SYNC: Major drift detected (" .. string.format("%.1f", average_drift) .. "s) - will restart at song change")
+                term.setTextColor(colors.white)
+                
                 -- Don't restart immediately - wait for next song change
                 -- Just log the issue for now
                 state.sync_drift_samples = {} -- Clear samples
@@ -1473,11 +1577,20 @@ function radioClient.handleSyncStatus(state, data)
                     state.allow_playback = false
                     state.logger.info("RadioClient", "Pausing playback briefly to catch up")
                     
+                    -- CLEAR AUDIO STOP LOG
+                    term.setTextColor(colors.orange)
+                    print("⏸️ AUDIO PAUSED: Sync correction - client behind by " .. string.format("%.1f", average_drift) .. "s")
+                    term.setTextColor(colors.white)
+                    
                     -- Resume after short delay
                     local function resumePlayback()
                         sleep(math.min(2.0, math.abs(average_drift) * 0.5)) -- Max 2 second pause
                         state.allow_playback = true
                         state.logger.info("RadioClient", "Resuming playback after sync adjustment")
+                        -- CLEAR AUDIO START LOG
+                        term.setTextColor(colors.lime)
+                        print("▶️ AUDIO RESUMED: Sync correction completed")
+                        term.setTextColor(colors.white)
                     end
                     
                     -- Run resume in background
@@ -1488,6 +1601,10 @@ function radioClient.handleSyncStatus(state, data)
                 else
                     -- We're ahead - this is harder to fix, just note it
                     state.logger.info("RadioClient", "Client ahead of host - will self-correct over time")
+                    -- CLEAR AUDIO INFO LOG
+                    term.setTextColor(colors.lightBlue)
+                    print("ℹ️ AUDIO SYNC: Client ahead by " .. string.format("%.1f", average_drift) .. "s - will self-correct")
+                    term.setTextColor(colors.white)
                 end
                 
                 state.sync_drift_samples = {} -- Clear samples
@@ -1502,6 +1619,12 @@ function radioClient.handleSyncStatus(state, data)
     if data.now_playing and state.now_playing then
         if data.now_playing.id ~= state.now_playing.id then
             state.logger.info("RadioClient", "Song change detected via sync")
+            
+            -- CLEAR AUDIO STOP LOG
+            term.setTextColor(colors.cyan)
+            print("🔄 AUDIO STOPPED: Song change via sync - " .. data.now_playing.name)
+            term.setTextColor(colors.white)
+            
             state.now_playing = data.now_playing
             state.current_song_index = data.current_song_index or 1
             
@@ -1524,20 +1647,30 @@ function radioClient.handleSyncStatus(state, data)
             state.is_playing_audio = false
             
             state.logger.info("RadioClient", "Song change sync: " .. state.now_playing.name)
+            -- CLEAR AUDIO START LOG
+            term.setTextColor(colors.lime)
+            print("🎵 AUDIO STARTING: Song change sync - " .. state.now_playing.name)
+            term.setTextColor(colors.white)
             os.queueEvent("audio_update")
-        end
-    elseif data.now_playing and not state.now_playing then
-        -- First time receiving song info
-        state.logger.info("RadioClient", "Received initial song info: " .. data.now_playing.name)
-        state.now_playing = data.now_playing
-        state.current_song_index = data.current_song_index or 1
-        state.playing = data.playing or false
-        state.host_song_start_time = data.playback_start_time or currentTime
-        state.allow_playback = true
-        
-        if state.playing then
-            state.logger.info("RadioClient", "Initial sync: " .. state.now_playing.name)
-            os.queueEvent("audio_update")
+        elseif data.now_playing and not state.now_playing then
+            -- First time receiving song info
+            state.logger.info("RadioClient", "Received initial song info: " .. data.now_playing.name)
+            
+            -- CLEAR AUDIO START LOG
+            term.setTextColor(colors.lime)
+            print("🎵 AUDIO STARTING: Initial song info - " .. data.now_playing.name)
+            term.setTextColor(colors.white)
+            
+            state.now_playing = data.now_playing
+            state.current_song_index = data.current_song_index or 1
+            state.playing = data.playing or false
+            state.host_song_start_time = data.playback_start_time or currentTime
+            state.allow_playback = true
+            
+            if state.playing then
+                state.logger.info("RadioClient", "Initial sync: " .. state.now_playing.name)
+                os.queueEvent("audio_update")
+            end
         end
     end
     
@@ -1547,6 +1680,11 @@ function radioClient.handleSyncStatus(state, data)
         state.playing = data.playing
         
         if not state.playing then
+            -- CLEAR AUDIO STOP LOG
+            term.setTextColor(colors.orange)
+            print("⏸️ AUDIO STOPPED: Playback state sync - host paused")
+            term.setTextColor(colors.white)
+            
             -- Pause - stop speakers but don't disconnect
             local speakers = state.speakerManager.getRawSpeakers()
             for _, speaker in ipairs(speakers) do
@@ -1559,6 +1697,10 @@ function radioClient.handleSyncStatus(state, data)
             state.host_song_start_time = data.playback_start_time or currentTime
             
             state.logger.info("RadioClient", "Resume sync: " .. state.now_playing.name)
+            -- CLEAR AUDIO START LOG
+            term.setTextColor(colors.lime)
+            print("▶️ AUDIO STARTING: Playback state sync - host resumed")
+            term.setTextColor(colors.white)
             os.queueEvent("audio_update")
         end
     end
